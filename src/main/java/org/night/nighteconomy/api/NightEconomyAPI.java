@@ -16,7 +16,7 @@ import java.util.UUID;
  * Esta interface fornece acesso completo ao sistema de economia multi-moeda,
  * permitindo que outros mods interajam com contas, transações, rankings e configurações.
  * 
- * @author NightEconomy Team
+ * @author NightEconomy
  * @version 2.0.0
  * @since 1.0.0
  */

@@ -158,10 +158,9 @@ public class DatabaseManager {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
-                LOGGER.info("Conexão com banco de dados fechada.");
             }
         } catch (SQLException e) {
-            LOGGER.error("Erro ao fechar conexão com banco de dados: ", e);
+            LOGGER.error("Error closing database connection: ", e);
         }
     }
 }

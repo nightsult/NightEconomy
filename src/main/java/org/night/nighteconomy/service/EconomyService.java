@@ -20,7 +20,7 @@ public class EconomyService {
         String username = player.getName().getString();
         
         if (databaseManager.createAccount(playerUuid, username)) {
-            LOGGER.info("Conta criada para jogador: " + username);
+            LOGGER.info("Create account: " + username);
         }
     }
     
@@ -51,7 +51,7 @@ public class EconomyService {
         
         boolean success = databaseManager.addBalance(playerUuid, amount);
         if (success) {
-            databaseManager.recordTransaction(null, playerUuid, amount, "ADD", "Dinheiro adicionado por admin");
+            databaseManager.recordTransaction(null, playerUuid, amount, "ADD", "Money added by admin");
         }
         
         return success;
@@ -68,7 +68,7 @@ public class EconomyService {
         
         boolean success = databaseManager.subtractBalance(playerUuid, amount);
         if (success) {
-            databaseManager.recordTransaction(playerUuid, null, amount, "REMOVE", "Dinheiro removido por admin");
+            databaseManager.recordTransaction(playerUuid, null, amount, "REMOVE", "Money removed by admin");
         }
         
         return success;
@@ -87,13 +87,11 @@ public class EconomyService {
             return false;
         }
         
-        // Verificar se o remetente tem saldo suficiente
         double fromBalance = databaseManager.getBalance(fromUuid);
         if (fromBalance < amount) {
             return false;
         }
         
-        // Realizar transferência
         boolean subtractSuccess = databaseManager.subtractBalance(fromUuid, amount);
         if (!subtractSuccess) {
             return false;
@@ -101,14 +99,12 @@ public class EconomyService {
         
         boolean addSuccess = databaseManager.addBalance(toUuid, amount);
         if (!addSuccess) {
-            // Reverter subtração se a adição falhar
             databaseManager.addBalance(fromUuid, amount);
             return false;
         }
         
-        // Registrar transação
-        databaseManager.recordTransaction(fromUuid, toUuid, amount, "TRANSFER", 
-            String.format("Transferência de %s para %s", fromName, toName));
+        databaseManager.recordTransaction(fromUuid, toUuid, amount, "TRANSFER",
+            String.format("Transfer from %s to %s", fromName, toName));
         
         return true;
     }

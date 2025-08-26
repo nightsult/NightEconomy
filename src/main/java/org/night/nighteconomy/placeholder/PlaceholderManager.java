@@ -22,7 +22,6 @@ public class PlaceholderManager {
     private final ConfigManager configManager;
     private LuckPerms luckPerms;
 
-    // Placeholder patterns
     private static final Pattern CURRENCY_PLACEHOLDER_PATTERN = Pattern.compile("nighteconomy_([a-zA-Z0-9_]+)_([a-zA-Z0-9_]+)");
 
     public PlaceholderManager(MultiCurrencyEconomyService economyService, ConfigManager configManager) {
@@ -38,9 +37,6 @@ public class PlaceholderManager {
         }
     }
 
-    /**
-     * Registra todos os placeholders do mod no LuckPerms
-     */
     public void registerPlaceholders() {
         if (luckPerms == null) {
             LOGGER.warn("Não é possível registrar placeholders: LuckPerms não disponível");
@@ -53,19 +49,15 @@ public class PlaceholderManager {
             // In practice, placeholders would be handled through PlaceholderAPI or similar
             LOGGER.info("Placeholders registrados com LuckPerms");
         } catch (Exception e) {
-            LOGGER.error("Erro ao registrar placeholders: ", e);
+            LOGGER.error("Error registering placeholders: ", e);
         }
     }
 
-    /**
-     * Processa um placeholder e retorna o valor correspondente
-     */
     public String processPlaceholder(UUID playerUuid, String placeholder) {
         if (placeholder == null || placeholder.isEmpty()) {
             return placeholder;
         }
 
-        // Check if it's a nighteconomy placeholder
         if (!placeholder.startsWith("nighteconomy_")) {
             return placeholder;
         }
@@ -81,13 +73,10 @@ public class PlaceholderManager {
         return processCurrencyPlaceholder(playerUuid, currencyId, placeholderType);
     }
 
-    /**
-     * Processa placeholders específicos de moeda
-     */
     private String processCurrencyPlaceholder(UUID playerUuid, String currencyId, String placeholderType) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
         if (config == null) {
-            return "Moeda não encontrada";
+            return "Money not found";
         }
 
         switch (placeholderType.toLowerCase()) {
@@ -122,39 +111,30 @@ public class PlaceholderManager {
                 return String.valueOf(economyService.isPaymentEnabled(playerUuid, currencyId));
 
             default:
-                return "Placeholder desconhecido";
+                return "Placeholder unknown";
         }
     }
 
-    /**
-     * Obtém o saldo formatado do jogador
-     */
     private String getFormattedBalance(UUID playerUuid, String currencyId) {
         try {
             double balance = economyService.getBalance(playerUuid, currencyId);
             return economyService.formatAmount(currencyId, balance);
         } catch (Exception e) {
-            LOGGER.error("Erro ao obter saldo formatado: ", e);
+            LOGGER.error("Error getting formatted balance: ", e);
             return "0";
         }
     }
 
-    /**
-     * Obtém a posição do jogador no ranking
-     */
     private String getPlayerPosition(UUID playerUuid, String currencyId) {
         try {
             int position = economyService.getPlayerPosition(playerUuid, currencyId);
             return position > 0 ? String.valueOf(position) : "N/A";
         } catch (Exception e) {
-            LOGGER.error("Erro ao obter posição do jogador: ", e);
+            LOGGER.error("Error getting player position: ", e);
             return "N/A";
         }
     }
 
-    /**
-     * Obtém a tag de magnata se o jogador for o top 1
-     */
     private String getMagnataTag(UUID playerUuid, String currencyId) {
         try {
             if (economyService.isPlayerMagnata(playerUuid, currencyId)) {
@@ -162,14 +142,11 @@ public class PlaceholderManager {
             }
             return "";
         } catch (Exception e) {
-            LOGGER.error("Erro ao verificar tag de magnata: ", e);
+            LOGGER.error("Error verifying tycoon tag: ", e);
             return "";
         }
     }
 
-    /**
-     * Obtém o nome do jogador top 1
-     */
     private String getTopPlayerName(String currencyId) {
         try {
             var topPlayers = economyService.getTopPlayers(currencyId, 1);
@@ -178,14 +155,11 @@ public class PlaceholderManager {
             }
             return "N/A";
         } catch (Exception e) {
-            LOGGER.error("Erro ao obter nome do top 1: ", e);
+            LOGGER.error("Error getting top 1 name: ", e);
             return "N/A";
         }
     }
 
-    /**
-     * Obtém o saldo do jogador top 1
-     */
     private String getTopPlayerBalance(String currencyId) {
         try {
             var topPlayers = economyService.getTopPlayers(currencyId, 1);
@@ -195,14 +169,11 @@ public class PlaceholderManager {
             }
             return "0";
         } catch (Exception e) {
-            LOGGER.error("Erro ao obter saldo do top 1: ", e);
+            LOGGER.error("Error getting top 1 balance: ", e);
             return "0";
         }
     }
 
-    /**
-     * Processa múltiplos placeholders em uma string
-     */
     public String processPlaceholders(UUID playerUuid, String text) {
         if (text == null || text.isEmpty()) {
             return text;
@@ -220,9 +191,6 @@ public class PlaceholderManager {
         return result;
     }
 
-    /**
-     * Obtém informações do usuário do LuckPerms
-     */
     public User getLuckPermsUser(UUID playerUuid) {
         if (luckPerms == null) {
             return null;
@@ -231,17 +199,14 @@ public class PlaceholderManager {
         try {
             return luckPerms.getUserManager().getUser(playerUuid);
         } catch (Exception e) {
-            LOGGER.error("Erro ao obter usuário do LuckPerms: ", e);
+            LOGGER.error("Error getting LuckPerms user: ", e);
             return null;
         }
     }
 
-    /**
-     * Verifica se o jogador tem uma permissão específica
-     */
     public boolean hasPermission(UUID playerUuid, String permission) {
         if (luckPerms == null) {
-            return false; // Default to false if LuckPerms is not available
+            return false;
         }
 
         try {
@@ -250,81 +215,15 @@ public class PlaceholderManager {
                 return user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
             }
         } catch (Exception e) {
-            LOGGER.error("Erro ao verificar permissão: ", e);
+            LOGGER.error("Error checking permission: ", e);
         }
 
         return false;
     }
 
-    /**
-     * Obtém o grupo principal do jogador
-     */
-    public String getPrimaryGroup(UUID playerUuid) {
-        if (luckPerms == null) {
-            return "default";
-        }
-
-        try {
-            User user = luckPerms.getUserManager().getUser(playerUuid);
-            if (user != null) {
-                return user.getPrimaryGroup();
-            }
-        } catch (Exception e) {
-            LOGGER.error("Erro ao obter grupo principal: ", e);
-        }
-
-        return "default";
-    }
-
-    /**
-     * Obtém o prefixo do jogador do LuckPerms
-     */
-    public String getPrefix(UUID playerUuid) {
-        if (luckPerms == null) {
-            return "";
-        }
-
-        try {
-            User user = luckPerms.getUserManager().getUser(playerUuid);
-            if (user != null) {
-                String prefix = user.getCachedData().getMetaData().getPrefix();
-                return prefix != null ? prefix : "";
-            }
-        } catch (Exception e) {
-            LOGGER.error("Erro ao obter prefixo: ", e);
-        }
-
-        return "";
-    }
-
-    /**
-     * Obtém o sufixo do jogador do LuckPerms
-     */
-    public String getSuffix(UUID playerUuid) {
-        if (luckPerms == null) {
-            return "";
-        }
-
-        try {
-            User user = luckPerms.getUserManager().getUser(playerUuid);
-            if (user != null) {
-                String suffix = user.getCachedData().getMetaData().getSuffix();
-                return suffix != null ? suffix : "";
-            }
-        } catch (Exception e) {
-            LOGGER.error("Erro ao obter sufixo: ", e);
-        }
-
-        return "";
-    }
-
-    /**
-     * Cria um mapa com todos os placeholders disponíveis para um jogador
-     */
     public Map<String, String> getAllPlaceholders(UUID playerUuid) {
         Map<String, String> placeholders = new HashMap<>();
 
-        // Add placeholders for each currency
         for (String currencyId : economyService.getAvailableCurrencies()) {
             String prefix = "nighteconomy_" + currencyId + "_";
 
@@ -343,9 +242,6 @@ public class PlaceholderManager {
         return placeholders;
     }
 
-    /**
-     * Obtém a lista de placeholders disponíveis
-     */
     public String[] getAvailablePlaceholders() {
         return new String[]{
             "nighteconomy_<currency>_prefix",
@@ -361,9 +257,6 @@ public class PlaceholderManager {
         };
     }
 
-    /**
-     * Verifica se o LuckPerms está disponível
-     */
     public boolean isLuckPermsAvailable() {
         return luckPerms != null;
     }
