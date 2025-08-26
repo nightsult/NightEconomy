@@ -37,9 +37,9 @@ public class ConfigManager {
                 Files.createDirectories(currenciesDir);
             }
             loadCurrencies();
-            LOGGER.info("Configurações carregadas com sucesso!");
+            LOGGER.info("Reloading Sucess!");
         } catch (Exception e) {
-            LOGGER.error("Erro ao carregar configurações: ", e);
+            LOGGER.error("Error reloading: ", e);
         }
     }
 
@@ -58,14 +58,14 @@ public class ConfigManager {
             }
 
             if (currencies.isEmpty()) {
-                LOGGER.warn("Nenhuma moeda encontrada, criando moedas padrão...");
+                LOGGER.warn("No coins found, creating default coins...");
                 createDefaultCurrencies();
             }
 
-            LOGGER.info("Carregadas " + currencies.size() + " moedas");
+            LOGGER.info("Loaded " + currencies.size() + " currencies.");
 
         } catch (IOException e) {
-            LOGGER.error("Erro ao carregar moedas: ", e);
+            LOGGER.error("Error! Not loaded Currencies: ", e);
         }
     }
 
@@ -80,30 +80,30 @@ public class ConfigManager {
             CurrencyConfig config = CurrencyConfig.fromConfig(cfg);
             if (config != null) {
                 currencies.put(config.getId(), config);
-                LOGGER.debug("Moeda carregada: " + config.getId() + " (" + config.getName() + ")");
+                LOGGER.debug("Loaded currency: " + config.getId() + " (" + config.getName() + ")");
             } else {
-                LOGGER.warn("Falha ao carregar moeda do arquivo: " + currencyFile);
+                LOGGER.warn("Failed to load currency from file: " + currencyFile);
             }
         } catch (Exception e) {
-            LOGGER.error("Erro ao carregar arquivo de moeda " + currencyFile + ": ", e);
+            LOGGER.error("Error loading currency file " + currencyFile + ": ", e);
         }
     }
 
 
     private void createDefaultCurrencies() {
         try {
-            CurrencyConfig money = CurrencyConfig.createDefault("money", "Dinheiro");
+            CurrencyConfig money = CurrencyConfig.createDefault("money", "Money");
             saveCurrency(money);
             currencies.put(money.getId(), money);
 
-            CurrencyConfig coins = CurrencyConfig.createDefault("coins", "Moedas");
+            CurrencyConfig coins = CurrencyConfig.createDefault("cash", "Cash");
             coins.setDefaultValue(100.0);
             saveCurrency(coins);
             currencies.put(coins.getId(), coins);
 
-            LOGGER.info("Moedas padrão criadas: money, coins");
+            LOGGER.info("Default currencies created: money, coins");
         } catch (Exception e) {
-            LOGGER.error("Erro ao criar moedas padrão: ", e);
+            LOGGER.error("Error creating default currencies: ", e);
         }
     }
 
@@ -111,10 +111,10 @@ public class ConfigManager {
     private void saveCurrency(CurrencyConfig config) {
         try {
             Path currencyFile = currenciesDir.resolve(config.getId() + ".toml");
-            config.saveToFile(currencyFile); // delega para a própria CurrencyConfig
-            LOGGER.debug("Moeda salva: " + config.getId());
+            config.saveToFile(currencyFile);
+            LOGGER.debug("Currency saved: " + config.getId());
         } catch (Exception e) {
-            LOGGER.error("Erro ao salvar moeda " + config.getId() + ": ", e);
+            LOGGER.error("Error saving currency " + config.getId() + ": ", e);
         }
     }
 
@@ -128,18 +128,18 @@ public class ConfigManager {
     }
 
     public void reloadConfigurations() {
-        LOGGER.info("Recarregando todas as configurações...");
+        LOGGER.info("Reloading all settings...");
         loadConfigurations();
         messageManager.reloadMessages();
     }
 
     public void reloadCurrency(String currencyId) {
-        LOGGER.info("Recarregando moeda: " + currencyId);
+        LOGGER.info("Reloading currency: " + currencyId);
         Path currencyFile = currenciesDir.resolve(currencyId + ".toml");
         if (Files.exists(currencyFile)) {
             loadCurrency(currencyFile);
         } else {
-            LOGGER.warn("Arquivo de moeda não encontrado: " + currencyFile);
+            LOGGER.warn("Currency file not found: " + currencyFile);
         }
     }
 

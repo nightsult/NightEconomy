@@ -14,7 +14,7 @@ public class EcoCommand {
     
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("eco")
-            .requires(source -> source.hasPermission(2)) // Requer permissão de OP
+            .requires(source -> source.hasPermission(2))
             .then(Commands.literal("give")
                 .then(Commands.argument("player", EntityArgument.player())
                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))

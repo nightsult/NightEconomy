@@ -18,23 +18,20 @@ public class DatabaseManager {
 
     private void initializeDatabase() {
         try {
-            // Criar diretório se não existir
             File dbDir = new File("config/economymod");
             if (!dbDir.exists()) {
                 dbDir.mkdirs();
             }
 
-            // Conectar ao banco de dados
             String url = "jdbc:sqlite:config/economymod/" + DATABASE_NAME;
             connection = DriverManager.getConnection(url);
 
-            // Criar tabelas
             createTables();
 
-            LOGGER.info("Banco de dados inicializado com sucesso!");
+            LOGGER.info("Database initialized successfully!");
 
         } catch (SQLException e) {
-            LOGGER.error("Erro ao inicializar banco de dados: ", e);
+            LOGGER.error("Error initializing database: ", e);
         }
     }
 
@@ -66,7 +63,6 @@ public class DatabaseManager {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createAccountsTable);
             stmt.execute(createTransactionsTable);
-            LOGGER.info("Tabelas criadas com sucesso!");
         }
     }
 
@@ -82,7 +78,7 @@ public class DatabaseManager {
             return rowsAffected > 0;
 
         } catch (SQLException e) {
-            LOGGER.error("Erro ao criar conta para " + username + ": ", e);
+            LOGGER.error("Error creating account for " + username + ": ", e);
             return false;
         }
     }
@@ -100,7 +96,7 @@ public class DatabaseManager {
             }
 
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter saldo para " + playerUuid + ": ", e);
+            LOGGER.error("Error getting balance for " + playerUuid + ": ", e);
         }
 
         return 0.0;
@@ -117,7 +113,7 @@ public class DatabaseManager {
             return rowsAffected > 0;
 
         } catch (SQLException e) {
-            LOGGER.error("Erro ao definir saldo para " + playerUuid + ": ", e);
+            LOGGER.error("Error setting balance to " + playerUuid + ": ", e);
             return false;
         }
     }
@@ -149,7 +145,7 @@ public class DatabaseManager {
             return rowsAffected > 0;
 
         } catch (SQLException e) {
-            LOGGER.error("Erro ao registrar transação: ", e);
+            LOGGER.error("Error registering transaction: ", e);
             return false;
         }
     }

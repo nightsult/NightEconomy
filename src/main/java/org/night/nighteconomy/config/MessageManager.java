@@ -12,9 +12,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * MessageManager baseado em NightConfig (TOML)
- */
 public class MessageManager {
     private static final Logger LOGGER = LogManager.getLogger();
 
@@ -30,12 +27,10 @@ public class MessageManager {
 
     private void loadMessages() {
         try {
-            // Garante diretório
             if (!Files.exists(configDir)) {
                 Files.createDirectories(configDir);
             }
 
-            // Cria arquivo default se não existir
             if (!Files.exists(messagesFile)) {
                 createDefaultMessagesFile();
             }
@@ -48,7 +43,6 @@ public class MessageManager {
 
                 messages.clear();
 
-                // Carrega seções
                 loadMessagesFromSection(cfg, "global", "");
                 loadMessagesFromSection(cfg, "commands", "commands.");
                 loadMessagesFromSection(cfg, "errors", "errors.");
@@ -57,9 +51,8 @@ public class MessageManager {
                 loadMessagesFromSection(cfg, "payment", "payment.");
             }
 
-            LOGGER.info("Mensagens carregadas com sucesso! Total: {}", messages.size());
         } catch (Exception e) {
-            LOGGER.error("Erro ao carregar mensagens: ", e);
+            LOGGER.error("Error loading messages: ", e);
             loadDefaultMessages();
         }
     }
@@ -86,115 +79,100 @@ public class MessageManager {
                 .writingMode(WritingMode.REPLACE)
                 .build()) {
 
-            // Monta estrutura padrão
             CommentedConfig root = cfg;
 
-            // Seção global
             CommentedConfig global = CommentedConfig.inMemory();
-            global.set("prefix", "&6[NightEconomy]&r");
-            global.set("no-permission", "&cVocê não tem permissão para usar este comando!");
-            global.set("player-not-found", "&cJogador não encontrado!");
-            global.set("invalid-amount", "&cQuantia inválida! Use um número positivo.");
-            global.set("currency-not-found", "&cMoeda '{currency}' não encontrada!");
-            global.set("reload-success", "&aConfigurações recarregadas com sucesso!");
-            global.set("transaction-fee", "&eTaxa de transação: &f{fee}");
+            global.set("prefix", "&7[&eNightEconomy&7]&r");
+            global.set("no-permission", "&cYou do not have permission to use this command!");
+            global.set("player-not-found", "&cPlayer not found!");
+            global.set("invalid-amount", "&cInvalid amount! Please use a positive number..");
+            global.set("currency-not-found", "&cCurrency '{currency}' not found!");
+            global.set("reload-success", "&aSettings reloaded successfully!");
+            global.set("transaction-fee", "&eTransaction fee: &f{fee}");
             root.set("global", global);
 
-            // Seção commands
             CommentedConfig commands = CommentedConfig.inMemory();
-            commands.set("balance", "&aSeu saldo atual: &f{amount}");
-            commands.set("balance-other", "&aSaldo de {player}: &f{amount}");
-            commands.set("pay-sent", "&aVocê pagou &f{amount} &apara &f{player}!");
-            commands.set("pay-received", "&aVocê recebeu &f{amount} &ade &f{player}!");
-            commands.set("money-added", "&aAdicionado &f{amount} &apara &f{player}!");
-            commands.set("money-removed", "&cRemovido &f{amount} &cde &f{player}!");
-            commands.set("money-set", "&aSaldo de &f{player} &adefinido para &f{amount}!");
-            commands.set("balance-reset", "&aSaldo de &f{player} &aresetado!");
-            commands.set("currency-reloaded", "&aMoeda &f{currency} &arecarregada!");
+            commands.set("balance", "&aYour current balance: &f{amount}");
+            commands.set("balance-other", "&aBalance of {player}: &f{amount}");
+            commands.set("pay-sent", "&aYou paid &f{amount} &afor the &f{player}!");
+            commands.set("pay-received", "&aYou received &f{amount} &afrom &f{player}!");
+            commands.set("money-added", "&aAdded &f{amount} &ato &f{player}!");
+            commands.set("money-removed", "&cRemoved &f{amount} &cfrom &f{player}!");
+            commands.set("money-set", "&aBalance of &f{player} &aset to &f{amount}!");
+            commands.set("balance-reset", "&aBalance of &f{player} &areset!");
+            commands.set("currency-reloaded", "&aCurrency &f{currency} &areloaded!");
             root.set("commands", commands);
 
-            // Seção errors
             CommentedConfig errors = CommentedConfig.inMemory();
-            errors.set("insufficient-funds", "&cVocê não tem saldo suficiente!");
-            errors.set("payment-disabled", "&c{player} não aceita pagamentos!");
-            errors.set("cannot-pay-self", "&cVocê não pode pagar para si mesmo!");
-            errors.set("account-creation-failed", "&cErro ao criar conta!");
-            errors.set("balance-operation-failed", "&cErro ao realizar operação de saldo!");
-            errors.set("payment-failed", "&cErro ao realizar pagamento!");
-            errors.set("database-error", "&cErro no banco de dados!");
+            errors.set("insufficient-funds", "&cYou do not have sufficient funds!");
+            errors.set("payment-disabled", "&c{player} does not accept payments!");
+            errors.set("cannot-pay-self", "&cYou cannot pay yourself!");
+            errors.set("account-creation-failed", "&cError creating account!");
+            errors.set("balance-operation-failed", "&cError performing balance operation!");
+            errors.set("payment-failed", "&cError performing payment!");
+            errors.set("database-error", "&cDatabase error!");
             root.set("errors", errors);
 
-            // Seção success
             CommentedConfig success = CommentedConfig.inMemory();
-            success.set("account-created", "&aConta criada com sucesso!");
-            success.set("payment-completed", "&aPagamento realizado com sucesso!");
-            success.set("balance-updated", "&aSaldo atualizado com sucesso!");
-            success.set("settings-saved", "&aConfigurações salvas!");
+            success.set("account-created", "&aAccount created successfully!");
+            success.set("payment-completed", "&aPayment completed successfully!");
+            success.set("balance-updated", "&aBalance updated successfully!");
+            success.set("settings-saved", "&aSettings saved!");
             root.set("success", success);
 
-            // Seção ranking
             CommentedConfig ranking = CommentedConfig.inMemory();
             ranking.set("header", "&6=== Top {currency} ===");
             ranking.set("entry", "&e{position}. &f{player} &7- &a{amount}");
-            ranking.set("empty", "&cNenhum jogador encontrado no ranking!");
-            ranking.set("position", "&aSua posição no ranking: &f{position}");
-            ranking.set("not-in-ranking", "&cVocê não está no ranking!");
-            ranking.set("magnata-tag", "&6[MAGNATA]");
-            ranking.set("updated", "&aRanking atualizado!");
+            ranking.set("empty", "&cNo players found in the ranking!");
+            ranking.set("position", "&aYour position in the ranking: &f{position}");
+            ranking.set("not-in-ranking", "&cYou are not in the ranking!");
+            ranking.set("magnate-tag", "&6[MAGNATE]");
+            ranking.set("updated", "&aRanking updated!");
             root.set("ranking", ranking);
 
-            // Seção payment
             CommentedConfig payment = CommentedConfig.inMemory();
-            payment.set("toggle-enabled", "&aPagamentos habilitados!");
-            payment.set("toggle-disabled", "&cPagamentos desabilitados!");
-            payment.set("fee-charged", "&eTaxa cobrada: &f{fee}");
-            payment.set("confirmation", "&eConfirmar pagamento de &f{amount} &epara &f{player}? &a/confirm");
+            payment.set("toggle-enabled", "&aPayments enabled!");
+            payment.set("toggle-disabled", "&cPayments disabled!");
+            payment.set("fee-charged", "&eFee charged: &f{fee}");
+            payment.set("confirmation", "&eConfirm payment of &f{amount} &eto &f{player}? &a/confirm");
             root.set("payment", payment);
 
             cfg.save();
-            LOGGER.info("Arquivo de mensagens padrão criado: {}", messagesFile);
         } catch (Exception e) {
-            LOGGER.error("Erro ao criar arquivo de mensagens padrão: ", e);
+            LOGGER.error("Error creating default message file: ", e);
         }
     }
 
     private void loadDefaultMessages() {
-        LOGGER.warn("Carregando mensagens padrão devido a erro na configuração");
+        LOGGER.warn("Loading default messages due to configuration error");
         messages.clear();
 
-        // Global
         messages.put("prefix", "&6[NightEconomy]&r");
-        messages.put("no-permission", "&cVocê não tem permissão para usar este comando!");
-        messages.put("player-not-found", "&cJogador não encontrado!");
-        messages.put("invalid-amount", "&cQuantia inválida! Use um número positivo.");
-        messages.put("currency-not-found", "&cMoeda '{currency}' não encontrada!");
-        messages.put("reload-success", "&aConfigurações recarregadas com sucesso!");
+        messages.put("no-permission", "&cYou do not have permission to use this command!");
+        messages.put("player-not-found", "&cPlayer not found!");
+        messages.put("invalid-amount", "&cInvalid amount! Please use a positive number.");
+        messages.put("currency-not-found", "&cCurrency '{currency}' not found!");
+        messages.put("reload-success", "&aSettings reloaded successfully!");
 
-        // Commands
-        messages.put("commands.balance", "&aSeu saldo atual: &f{amount}");
-        messages.put("commands.balance-other", "&aSaldo de {player}: &f{amount}");
-        messages.put("commands.pay-sent", "&aVocê pagou &f{amount} &apara &f{player}!");
-        messages.put("commands.pay-received", "&aVocê recebeu &f{amount} &ade &f{player}!");
+        messages.put("commands.balance", "&aYour current balance: &f{amount}");
+        messages.put("commands.balance-other", "&aBalance of {player}: &f{amount}");
+        messages.put("commands.pay-sent", "&aYou paid &f{amount} &ato &f{player}!");
+        messages.put("commands.pay-received", "&aYou received &f{amount} &afrom &f{player}!");
 
-        // Errors
-        messages.put("errors.insufficient-funds", "&cVocê não tem saldo suficiente!");
-        messages.put("errors.payment-disabled", "&c{player} não aceita pagamentos!");
-        messages.put("errors.cannot-pay-self", "&cVocê não pode pagar para si mesmo!");
+        messages.put("errors.insufficient-funds", "&cYou do not have sufficient funds!");
+        messages.put("errors.payment-disabled", "&c{player} does not accept payments!");
+        messages.put("errors.cannot-pay-self", "&cYou cannot pay yourself!");
 
-        // Ranking
         messages.put("ranking.header", "&6=== Top {currency} ===");
         messages.put("ranking.entry", "&e{position}. &f{player} &7- &a{amount}");
-        messages.put("ranking.empty", "&cNenhum jogador encontrado no ranking!");
+        messages.put("ranking.empty", "&cNo players found in the ranking!");
 
-        // Payment
-        messages.put("payment.toggle-enabled", "&aPagamentos habilitados!");
-        messages.put("payment.toggle-disabled", "&cPagamentos desabilitados!");
+        messages.put("payment.toggle-enabled", "&aPayments enabled!");
+        messages.put("payment.toggle-disabled", "&cPayments disabled!");
     }
 
-    // ======= API pública =======
-
     public String getMessage(String key) {
-        return messages.getOrDefault(key, "&cMensagem não encontrada: " + key);
+        return messages.getOrDefault(key, "&cMessage not found: " + key);
     }
 
     public String getMessage(String key, String defaultMessage) {
@@ -219,7 +197,7 @@ public class MessageManager {
 
     public String getFormattedMessage(String key, String... placeholderPairs) {
         if (placeholderPairs.length % 2 != 0) {
-            LOGGER.warn("Número ímpar de argumentos para placeholders em: {}", key);
+            LOGGER.warn("Odd number of arguments for placeholders in: {}", key);
             return getMessage(key);
         }
         Map<String, String> placeholders = new HashMap<>();
@@ -230,7 +208,7 @@ public class MessageManager {
     }
 
     public void reloadMessages() {
-        LOGGER.info("Recarregando mensagens...");
+        LOGGER.info("Reloading messages...");
         loadMessages();
     }
 
@@ -255,7 +233,6 @@ public class MessageManager {
 
             CommentedConfig root = cfg;
 
-            // Reconstroi estrutura em seções
             Map<String, String> global = new HashMap<>();
             CommentedConfig commands = CommentedConfig.inMemory();
             CommentedConfig errors = CommentedConfig.inMemory();
@@ -282,7 +259,6 @@ public class MessageManager {
                 }
             }
 
-            // grava
             root.set("global", global);
             root.set("commands", commands);
             root.set("errors", errors);
@@ -291,9 +267,9 @@ public class MessageManager {
             root.set("payment", payment);
 
             cfg.save();
-            LOGGER.info("Mensagens salvas com sucesso!");
+            LOGGER.info("Messages saved successfully!");
         } catch (Exception e) {
-            LOGGER.error("Erro ao salvar mensagens: ", e);
+            LOGGER.error("Error saving messages: ", e);
         }
     }
 
@@ -317,7 +293,6 @@ public class MessageManager {
         return getPrefix() + " " + translateColors(getFormattedMessage(key, placeholderPairs));
     }
 
-    // Atalhos
     public String getErrorMessage(String key) { return getPrefixedMessage("errors." + key); }
     public String getSuccessMessage(String key) { return getPrefixedMessage("success." + key); }
     public String getCommandMessage(String key) { return getPrefixedMessage("commands." + key); }
