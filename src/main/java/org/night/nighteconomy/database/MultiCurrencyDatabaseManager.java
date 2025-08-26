@@ -57,65 +57,6 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
-    
-    private void createTables() throws SQLException {
-        String createAccountsTable = """
-            CREATE TABLE IF NOT EXISTS accounts (
-                uuid TEXT NOT NULL,
-                currency_id TEXT NOT NULL,
-                username TEXT NOT NULL,
-                balance REAL NOT NULL DEFAULT 0.0,
-                payment_enabled BOOLEAN NOT NULL DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (uuid, currency_id)
-            )
-        """;
-        
-        String createTransactionsTable = """
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                currency_id TEXT NOT NULL,
-                from_uuid TEXT,
-                to_uuid TEXT,
-                amount REAL NOT NULL,
-                fee REAL NOT NULL DEFAULT 0.0,
-                type TEXT NOT NULL,
-                description TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """;
-        
-        String createRankingCacheTable = """
-            CREATE TABLE IF NOT EXISTS ranking_cache (
-                currency_id TEXT NOT NULL,
-                uuid TEXT NOT NULL,
-                username TEXT NOT NULL,
-                balance REAL NOT NULL,
-                position INTEGER NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (currency_id, uuid)
-            )
-        """;
-        
-        String createPlayerSettingsTable = """
-            CREATE TABLE IF NOT EXISTS player_settings (
-                uuid TEXT PRIMARY KEY,
-                currency_id TEXT NOT NULL,
-                payment_enabled BOOLEAN NOT NULL DEFAULT 1,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """;
-        
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(createAccountsTable);
-            stmt.execute(createTransactionsTable);
-            stmt.execute(createRankingCacheTable);
-            stmt.execute(createPlayerSettingsTable);
-            LOGGER.info("Tabelas multi-moeda criadas com sucesso!");
-        }
-    }
-    
     // Account management
     public boolean createAccount(UUID playerUuid, String currencyId, String username, double defaultBalance) {
         String sql = "INSERT OR IGNORE INTO accounts (uuid, currency_id, username, balance) VALUES (?, ?, ?, ?)";
@@ -283,51 +224,138 @@ public class MultiCurrencyDatabaseManager {
         
         return transactions;
     }
-    
-    // Ranking management
+
+    // NOVO: verificação real de existência da conta
+    public boolean hasAccount(UUID playerUuid, String currencyId) {
+        String sql = "SELECT 1 FROM accounts WHERE uuid = ? AND currency_id = ? LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, playerUuid.toString());
+            pstmt.setString(2, currencyId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            LOGGER.error("Erro ao verificar existência de conta: ", e);
+            return false;
+        }
+    }
+
+    // OTIMIZADO: atualização do cache de ranking em transação e com um único INSERT...SELECT
     public void updateRankingCache(String currencyId) {
+        boolean oldAutoCommit = true;
         try {
-            // Clear old cache for this currency
-            String clearSql = "DELETE FROM ranking_cache WHERE currency_id = ?";
-            try (PreparedStatement clearStmt = connection.prepareStatement(clearSql)) {
+            oldAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+
+            // Limpa cache antigo
+            try (PreparedStatement clearStmt = connection.prepareStatement(
+                    "DELETE FROM ranking_cache WHERE currency_id = ?")) {
                 clearStmt.setString(1, currencyId);
                 clearStmt.executeUpdate();
             }
-            
-            // Get top players and insert into cache
-            String rankingSql = """
-                SELECT uuid, username, balance, 
-                       ROW_NUMBER() OVER (ORDER BY balance DESC) as position
-                FROM accounts 
-                WHERE currency_id = ? AND balance > 0
-                ORDER BY balance DESC 
-                LIMIT 100
-            """;
-            
-            String insertSql = "INSERT INTO ranking_cache (currency_id, uuid, username, balance, position) VALUES (?, ?, ?, ?, ?)";
-            
-            try (PreparedStatement rankingStmt = connection.prepareStatement(rankingSql);
-                 PreparedStatement insertStmt = connection.prepareStatement(insertSql)) {
-                
-                rankingStmt.setString(1, currencyId);
-                
-                try (ResultSet rs = rankingStmt.executeQuery()) {
-                    while (rs.next()) {
-                        insertStmt.setString(1, currencyId);
-                        insertStmt.setString(2, rs.getString("uuid"));
-                        insertStmt.setString(3, rs.getString("username"));
-                        insertStmt.setDouble(4, rs.getDouble("balance"));
-                        insertStmt.setInt(5, rs.getInt("position"));
-                        insertStmt.executeUpdate();
-                    }
-                }
+
+            // Insere novo cache de uma vez usando window function
+            // Nota: 'ROW_NUMBER() OVER (ORDER BY balance DESC)' requer SQLite 3.25+ (com suporte a window functions)
+            final String insertSql = """
+            INSERT INTO ranking_cache (currency_id, uuid, username, balance, position)
+            SELECT ? AS currency_id, uuid, username, balance,
+                   ROW_NUMBER() OVER (ORDER BY balance DESC) AS position
+            FROM accounts
+            WHERE currency_id = ? AND balance > 0
+            ORDER BY balance DESC
+            LIMIT 100
+        """;
+            try (PreparedStatement insertStmt = connection.prepareStatement(insertSql)) {
+                insertStmt.setString(1, currencyId);
+                insertStmt.setString(2, currencyId);
+                insertStmt.executeUpdate();
             }
-            
-            LOGGER.debug("Cache de ranking atualizado para moeda: " + currencyId);
-            
+
+            connection.commit();
+            LOGGER.debug("Cache de ranking atualizado (transação) para moeda: " + currencyId);
         } catch (SQLException e) {
-            LOGGER.error("Erro ao atualizar cache de ranking: ", e);
+            try { connection.rollback(); } catch (SQLException ignore) {}
+            LOGGER.error("Erro ao atualizar cache de ranking (transação): ", e);
+        } finally {
+            try { connection.setAutoCommit(oldAutoCommit); } catch (SQLException ignore) {}
         }
+    }
+
+    // REFORÇADO: criação de índices após criar tabelas (chame dentro de createTables ou initializeTables)
+    private void createIndices() throws SQLException {
+        try (Statement stmt = connection.createStatement()) {
+            // Para consultas de ranking por moeda (ordenando por balance para construir cache)
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_accounts_currency_balance ON accounts(currency_id, balance DESC)");
+
+            // Para histórico de transações (consultas por moeda+from/ou to ordenadas por timestamp)
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_from_time ON transactions(currency_id, from_uuid, timestamp DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_to_time   ON transactions(currency_id, to_uuid, timestamp DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_time      ON transactions(currency_id, timestamp DESC)");
+
+            // Para leitura do ranking já cacheado por moeda e posição
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_ranking_currency_pos  ON ranking_cache(currency_id, position)");
+        }
+    }
+
+    // CHAME createIndices() no final do createTables()
+    private void createTables() throws SQLException {
+        String createAccountsTable = """
+        CREATE TABLE IF NOT EXISTS accounts (
+            uuid TEXT NOT NULL,
+            currency_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            balance REAL NOT NULL DEFAULT 0.0,
+            payment_enabled BOOLEAN NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (uuid, currency_id)
+        )
+    """;
+
+        String createTransactionsTable = """
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            currency_id TEXT NOT NULL,
+            from_uuid TEXT,
+            to_uuid TEXT,
+            amount REAL NOT NULL,
+            fee REAL NOT NULL DEFAULT 0.0,
+            type TEXT NOT NULL,
+            description TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """;
+
+        String createRankingCacheTable = """
+        CREATE TABLE IF NOT EXISTS ranking_cache (
+            currency_id TEXT NOT NULL,
+            uuid TEXT NOT NULL,
+            username TEXT NOT NULL,
+            balance REAL NOT NULL,
+            position INTEGER NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (currency_id, uuid)
+        )
+    """;
+
+        String createPlayerSettingsTable = """
+        CREATE TABLE IF NOT EXISTS player_settings (
+            uuid TEXT PRIMARY KEY,
+            currency_id TEXT NOT NULL,
+            payment_enabled BOOLEAN NOT NULL DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """;
+
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute(createAccountsTable);
+            stmt.execute(createTransactionsTable);
+            stmt.execute(createRankingCacheTable);
+            stmt.execute(createPlayerSettingsTable);
+        }
+
+        // Garantir índices
+        createIndices();
     }
     
     public List<RankingEntry> getTopPlayers(String currencyId, int limit) {

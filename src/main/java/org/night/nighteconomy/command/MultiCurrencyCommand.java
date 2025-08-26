@@ -288,31 +288,103 @@ public class MultiCurrencyCommand {
         
         return success ? 1 : 0;
     }
-    
+
+    // ATUALIZADO: usar mensagens "ranking.*" corretas e não atualizar ranking no comando
     private int showRanking(CommandContext<CommandSourceStack> context, String currencyId) {
+        // Não força atualização aqui; apenas lê o cache (rápido)
         List<RankingEntry> ranking = economyService.getTopPlayers(currencyId, 10);
         CurrencyConfig config = configManager.getCurrency(currencyId);
-        
+
         if (ranking.isEmpty()) {
-            String message = configManager.getGlobalMessage("ranking-empty");
+            String message = configManager.getRankingMessage("empty");
             context.getSource().sendSuccess(() -> Component.literal(translateColors(message)), false);
             return 1;
         }
-        
-        String header = configManager.getGlobalMessage("ranking-header")
-            .replace("{currency}", config.getName());
+
+        String header = configManager.getRankingMessage("header", "currency", config != null ? config.getName() : currencyId);
         context.getSource().sendSuccess(() -> Component.literal(translateColors(header)), false);
-        
+
         for (RankingEntry entry : ranking) {
             String formattedAmount = economyService.formatAmount(currencyId, entry.getBalance());
-            String line = configManager.getGlobalMessage("ranking-entry")
-                .replace("{position}", String.valueOf(entry.getPosition()))
-                .replace("{player}", entry.getUsername())
-                .replace("{amount}", formattedAmount);
-            
+            String line = configManager.getRankingMessage(
+                    "entry",
+                    "position", String.valueOf(entry.getPosition()),
+                    "player", entry.getUsername(),
+                    "amount", formattedAmount
+            );
             context.getSource().sendSuccess(() -> Component.literal(translateColors(line)), false);
         }
-        
+
+        return 1;
+    }
+
+    // ATUALIZADO: consultas pesadas assíncronas (histórico do próprio)
+    private int showTransactions(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = source.getPlayerOrException();
+
+        source.sendSuccess(() -> Component.literal(translateColors("&eCarregando suas transações...")), false);
+
+        economyService.getPlayerTransactionsAsync(player.getUUID(), currencyId, 10).thenAccept(transactions -> {
+            source.getServer().execute(() -> {
+                if (transactions.isEmpty()) {
+                    source.sendSuccess(() -> Component.literal(translateColors("&cNenhuma transação encontrada!")), false);
+                    return;
+                }
+
+                source.sendSuccess(() -> Component.literal(translateColors("&6=== Suas Transações ===")), false);
+                for (Transaction transaction : transactions) {
+                    String formattedAmount = economyService.formatAmount(currencyId, transaction.getAmount());
+                    String line = String.format("&e%s &7- &f%s &7(%s)",
+                            transaction.getType(),
+                            formattedAmount,
+                            transaction.getTimestamp().toString());
+                    source.sendSuccess(() -> Component.literal(translateColors(line)), false);
+                }
+            });
+        }).exceptionally(ex -> {
+            source.getServer().execute(() ->
+                    source.sendFailure(Component.literal(translateColors("&cErro ao carregar transações: " + ex.getMessage())))
+            );
+            return null;
+        });
+
+        return 1; // Resposta imediata; resultados virão assincronamente
+    }
+
+    // ATUALIZADO: consultas pesadas assíncronas (histórico de outro jogador)
+    private int showOtherTransactions(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer targetPlayer = EntityArgument.getPlayer(context, "player");
+
+        source.sendSuccess(() -> Component.literal(translateColors("&eCarregando transações de " + targetPlayer.getName().getString() + "...")), false);
+
+        economyService.getPlayerTransactionsAsync(targetPlayer.getUUID(), currencyId, 10).thenAccept(transactions -> {
+            source.getServer().execute(() -> {
+                if (transactions.isEmpty()) {
+                    source.sendSuccess(() -> Component.literal(translateColors("&cNenhuma transação encontrada!")), false);
+                    return;
+                }
+
+                String header = "&6=== Transações de " + targetPlayer.getName().getString() + " ===";
+                source.sendSuccess(() -> Component.literal(translateColors(header)), false);
+
+                for (Transaction transaction : transactions) {
+                    String formattedAmount = economyService.formatAmount(currencyId, transaction.getAmount());
+                    String line = String.format("&e%s &7- &f%s &7(%s)",
+                            transaction.getType(),
+                            formattedAmount,
+                            transaction.getTimestamp().toString());
+                    source.sendSuccess(() -> Component.literal(translateColors(line)), false);
+                }
+            });
+        }).exceptionally(ex -> {
+            source.getServer().execute(() ->
+                    source.sendFailure(Component.literal(translateColors("&cErro ao carregar transações: " + ex.getMessage())))
+            );
+            return null;
+        });
+
         return 1;
     }
     
@@ -360,57 +432,7 @@ public class MultiCurrencyCommand {
         
         return success ? 1 : 0;
     }
-    
-    private int showTransactions(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
-        ServerPlayer player = context.getSource().getPlayerOrException();
-        List<Transaction> transactions = economyService.getPlayerTransactions(player.getUUID(), currencyId, 10);
-        
-        if (transactions.isEmpty()) {
-            context.getSource().sendSuccess(() -> Component.literal(translateColors("&cNenhuma transação encontrada!")), false);
-            return 1;
-        }
-        
-        context.getSource().sendSuccess(() -> Component.literal(translateColors("&6=== Suas Transações ===")), false);
-        
-        for (Transaction transaction : transactions) {
-            String formattedAmount = economyService.formatAmount(currencyId, transaction.getAmount());
-            String line = String.format("&e%s &7- &f%s &7(%s)", 
-                transaction.getType(), 
-                formattedAmount, 
-                transaction.getTimestamp().toString());
-            
-            context.getSource().sendSuccess(() -> Component.literal(translateColors(line)), false);
-        }
-        
-        return 1;
-    }
-    
-    private int showOtherTransactions(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
-        ServerPlayer targetPlayer = EntityArgument.getPlayer(context, "player");
-        List<Transaction> transactions = economyService.getPlayerTransactions(targetPlayer.getUUID(), currencyId, 10);
-        
-        if (transactions.isEmpty()) {
-            context.getSource().sendSuccess(() -> Component.literal(translateColors("&cNenhuma transação encontrada!")), false);
-            return 1;
-        }
-        
-        String header = "&6=== Transações de " + targetPlayer.getName().getString() + " ===";
-        context.getSource().sendSuccess(() -> Component.literal(translateColors(header)), false);
-        
-        for (Transaction transaction : transactions) {
-            String formattedAmount = economyService.formatAmount(currencyId, transaction.getAmount());
-            String line = String.format("&e%s &7- &f%s &7(%s)", 
-                transaction.getType(), 
-                formattedAmount, 
-                transaction.getTimestamp().toString());
-            
-            context.getSource().sendSuccess(() -> Component.literal(translateColors(line)), false);
-        }
-        
-        return 1;
-    }
-    
-    // Global commands
+
     private int reloadAll(CommandContext<CommandSourceStack> context) {
         configManager.reloadConfigurations();
         

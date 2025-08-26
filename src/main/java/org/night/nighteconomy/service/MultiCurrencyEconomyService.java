@@ -76,14 +76,28 @@ public class MultiCurrencyEconomyService {
         
         return databaseManager.createAccount(playerUuid, currencyId, username, config.getDefaultValue());
     }
-    
+
     public void ensureAccountExists(UUID playerUuid, String currencyId, String username) {
-        if (databaseManager.getBalance(playerUuid, currencyId) == 0.0) {
-            // Check if account actually exists or if balance is just 0
+        if (!databaseManager.hasAccount(playerUuid, currencyId)) {
             createAccount(playerUuid, currencyId, username);
         }
     }
-    
+
+    public java.util.concurrent.CompletableFuture<List<Transaction>> getPlayerTransactionsAsync(UUID playerUuid, String currencyId, int limit) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> databaseManager.getPlayerTransactions(playerUuid, currencyId, Math.min(limit, 50)),
+                scheduler
+        );
+    }
+
+    public java.util.concurrent.CompletableFuture<List<RankingEntry>> getTopPlayersAsync(String currencyId, int limit) {
+        // Apenas lê o cache; atualização é feita pelo scheduler interno
+        return java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> databaseManager.getTopPlayers(currencyId, Math.min(limit, 100)),
+                scheduler
+        );
+    }
+
     public double getBalance(UUID playerUuid, String currencyId) {
         return databaseManager.getBalance(playerUuid, currencyId);
     }

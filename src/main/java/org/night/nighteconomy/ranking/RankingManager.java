@@ -22,54 +22,68 @@ public class RankingManager {
         this.databaseManager = databaseManager;
         this.configManager = configManager;
     }
-    
+
+    private final java.util.concurrent.ExecutorService updateExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "RankingUpdate");
+                t.setDaemon(true);
+                return t;
+            });
+
     public List<RankingEntry> getTopPlayers(String currencyId, int limit) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
         if (config == null || !config.isRanking()) {
             return new ArrayList<>();
         }
-        
-        // Check if cache needs update
+
         if (shouldUpdateCache(currencyId, config)) {
-            updateRankingCache(currencyId);
+            triggerAsyncUpdate(currencyId);
         }
-        
+
         List<RankingEntry> cached = rankingCache.get(currencyId);
         if (cached == null) {
             return new ArrayList<>();
         }
-        
-        // Return requested number of entries
+
         int endIndex = Math.min(limit, cached.size());
         return new ArrayList<>(cached.subList(0, endIndex));
     }
-    
+
     public int getPlayerPosition(UUID playerUuid, String currencyId) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
         if (config == null || !config.isRanking()) {
             return -1;
         }
-        
-        // Check if cache needs update
+
         if (shouldUpdateCache(currencyId, config)) {
-            updateRankingCache(currencyId);
+            triggerAsyncUpdate(currencyId);
         }
-        
+
         List<RankingEntry> cached = rankingCache.get(currencyId);
         if (cached == null) {
             return -1;
         }
-        
+
         String uuidString = playerUuid.toString();
         for (RankingEntry entry : cached) {
             if (uuidString.equals(entry.getUuid())) {
                 return entry.getPosition();
             }
         }
-        
-        return -1; // Player not in ranking
+        return -1;
     }
-    
+
+    // NOVO: dispara atualização em background
+    private void triggerAsyncUpdate(String currencyId) {
+        updateExecutor.submit(() -> {
+            try {
+                updateRankingCache(currencyId);
+            } catch (Exception e) {
+                LOGGER.error("Erro ao atualizar ranking em background para " + currencyId, e);
+            }
+        });
+    }
+
     public RankingEntry getTopPlayer(String currencyId) {
         List<RankingEntry> topPlayers = getTopPlayers(currencyId, 1);
         return topPlayers.isEmpty() ? null : topPlayers.get(0);
