@@ -1,0 +1,596 @@
+# NightEconomy API Documentation
+
+## Visão Geral
+
+A API do NightEconomy fornece acesso completo ao sistema de economia multi-moeda para outros mods. Esta documentação explica como integrar seu mod com o NightEconomy e utilizar todas as funcionalidades disponíveis.
+
+## Versão da API
+
+**Versão Atual:** 3.0.0
+
+## Obtendo a Instância da API
+
+### Método 1: Através do Registro de Serviços (Recomendado)
+
+```java
+import com.example.economymod.api.NightEconomyAPI;
+
+public class MeuMod {
+    private NightEconomyAPI economyAPI;
+    
+    @SubscribeEvent
+    public void onServerStarting(ServerStartingEvent event) {
+        // Obter a API através do registro de serviços
+        economyAPI = NightEconomyAPIProvider.get();
+        
+        if (economyAPI != null) {
+            System.out.println("NightEconomy API carregada com sucesso!");
+            System.out.println("Versão da API: " + economyAPI.getAPIVersion());
+        }
+    }
+}
+```
+
+### Método 2: Através de Eventos
+
+```java
+@SubscribeEvent
+public void onNightEconomyReady(NightEconomyReadyEvent event) {
+    economyAPI = event.getAPI();
+    // Sua lógica de inicialização aqui
+}
+```
+
+## Funcionalidades Principais
+
+### 1. Gerenciamento de Moedas
+
+#### Listar Moedas Disponíveis
+
+```java
+Set<String> currencies = economyAPI.getAvailableCurrencies();
+for (String currencyId : currencies) {
+    String name = economyAPI.getCurrencyName(currencyId);
+    double defaultValue = economyAPI.getCurrencyDefaultValue(currencyId);
+    System.out.println("Moeda: " + currencyId + " (" + name + ") - Valor padrão: " + defaultValue);
+}
+```
+
+#### Verificar se uma Moeda Existe
+
+```java
+if (economyAPI.currencyExists("money")) {
+    System.out.println("A moeda 'money' está disponível!");
+}
+```
+
+#### Obter Configuração de uma Moeda
+
+```java
+CurrencyConfig config = economyAPI.getCurrencyConfig("money");
+if (config != null) {
+    System.out.println("Nome: " + config.getName());
+    System.out.println("Ranking habilitado: " + config.isRanking());
+    System.out.println("Intervalo de atualização: " + config.getUpdate() + "s");
+}
+```
+
+### 2. Gerenciamento de Contas
+
+#### Criar uma Conta
+
+```java
+UUID playerUuid = player.getUUID();
+String username = player.getName().getString();
+
+boolean success = economyAPI.createAccount(playerUuid, "money", username);
+if (success) {
+    System.out.println("Conta criada com sucesso!");
+}
+```
+
+#### Verificar se uma Conta Existe
+
+```java
+if (economyAPI.hasAccount(playerUuid, "money")) {
+    System.out.println("O jogador já possui uma conta!");
+} else {
+    // Criar conta automaticamente
+    economyAPI.ensureAccountExists(playerUuid, "money", username);
+}
+```
+
+### 3. Operações de Saldo
+
+#### Obter Saldo
+
+```java
+double balance = economyAPI.getBalance(playerUuid, "money");
+String formattedBalance = economyAPI.formatAmount("money", balance);
+System.out.println("Saldo: " + formattedBalance);
+```
+
+#### Definir Saldo
+
+```java
+boolean success = economyAPI.setBalance(playerUuid, "money", 1000.0);
+if (success) {
+    System.out.println("Saldo definido com sucesso!");
+}
+```
+
+#### Adicionar Dinheiro
+
+```java
+boolean success = economyAPI.addBalance(playerUuid, "money", 500.0);
+if (success) {
+    System.out.println("Dinheiro adicionado com sucesso!");
+}
+```
+
+#### Remover Dinheiro
+
+```java
+if (economyAPI.hasBalance(playerUuid, "money", 100.0)) {
+    boolean success = economyAPI.subtractBalance(playerUuid, "money", 100.0);
+    if (success) {
+        System.out.println("Dinheiro removido com sucesso!");
+    }
+} else {
+    System.out.println("Saldo insuficiente!");
+}
+```
+
+#### Obter Todos os Saldos de um Jogador
+
+```java
+Map<String, Double> balances = economyAPI.getAllPlayerBalances(playerUuid);
+for (Map.Entry<String, Double> entry : balances.entrySet()) {
+    String currencyId = entry.getKey();
+    double balance = entry.getValue();
+    String formatted = economyAPI.formatAmount(currencyId, balance);
+    System.out.println(currencyId + ": " + formatted);
+}
+```
+
+### 4. Sistema de Pagamentos
+
+#### Realizar um Pagamento
+
+```java
+UUID fromUuid = sender.getUUID();
+UUID toUuid = receiver.getUUID();
+double amount = 100.0;
+
+PaymentResult result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
+
+if (result.isSuccess()) {
+    System.out.println("Pagamento realizado com sucesso!");
+    if (result.getFee() > 0) {
+        System.out.println("Taxa cobrada: " + result.getFee());
+    }
+} else {
+    System.out.println("Erro no pagamento: " + result.getMessage());
+}
+```
+
+#### Configurações de Pagamento
+
+```java
+// Verificar se o jogador aceita pagamentos
+boolean acceptsPayments = economyAPI.isPaymentEnabled(playerUuid, "money");
+
+// Alterar configuração de pagamentos
+boolean success = economyAPI.setPaymentEnabled(playerUuid, "money", false);
+if (success) {
+    System.out.println("Pagamentos desabilitados para o jogador!");
+}
+
+// Calcular taxa de transação
+double fee = economyAPI.calculateTransactionFee("money", 1000.0);
+System.out.println("Taxa para transação de 1000: " + fee);
+```
+
+### 5. Histórico de Transações
+
+```java
+List<Transaction> transactions = economyAPI.getPlayerTransactions(playerUuid, "money", 10);
+
+for (Transaction transaction : transactions) {
+    System.out.println("Tipo: " + transaction.getType());
+    System.out.println("Quantia: " + transaction.getAmount());
+    System.out.println("Data: " + transaction.getTimestamp());
+    System.out.println("Descrição: " + transaction.getDescription());
+    System.out.println("---");
+}
+```
+
+#### Registrar Transação Externa
+
+```java
+boolean success = economyAPI.recordExternalTransaction(
+    "money",           // ID da moeda
+    null,              // UUID do remetente (null para sistema)
+    playerUuid,        // UUID do destinatário
+    500.0,             // Quantia
+    "QUEST_REWARD",    // Tipo da transação
+    "Recompensa de quest completada" // Descrição
+);
+```
+
+### 6. Sistema de Ranking
+
+#### Verificar se o Ranking está Habilitado
+
+```java
+if (economyAPI.isRankingEnabled("money")) {
+    System.out.println("Ranking está habilitado para a moeda 'money'!");
+}
+```
+
+#### Obter Top Jogadores
+
+```java
+List<RankingEntry> topPlayers = economyAPI.getTopPlayers("money", 10);
+
+for (RankingEntry entry : topPlayers) {
+    System.out.println(entry.getPosition() + ". " + entry.getUsername() + 
+                      " - " + economyAPI.formatAmount("money", entry.getBalance()));
+}
+```
+
+#### Obter Posição de um Jogador
+
+```java
+int position = economyAPI.getPlayerPosition(playerUuid, "money");
+if (position > 0) {
+    System.out.println("Posição no ranking: " + position);
+} else {
+    System.out.println("Jogador não está no ranking.");
+}
+```
+
+#### Sistema de Magnata
+
+```java
+// Verificar se o jogador é o magnata (top 1)
+if (economyAPI.isPlayerMagnata(playerUuid, "money")) {
+    String magnataTag = economyAPI.getMagnataTag("money");
+    System.out.println("Jogador é o magnata! Tag: " + magnataTag);
+}
+
+// Forçar atualização do ranking
+economyAPI.forceRankingUpdate("money");
+```
+
+### 7. Sistema de Placeholders
+
+#### Processar Placeholders Individuais
+
+```java
+String placeholder = "nighteconomy_money_balance";
+String value = economyAPI.processPlaceholder(playerUuid, placeholder);
+System.out.println("Saldo: " + value);
+```
+
+#### Processar Múltiplos Placeholders
+
+```java
+String message = "Seu saldo: %nighteconomy_money_balance% | Posição: %nighteconomy_money_position%";
+String processedMessage = economyAPI.processPlaceholders(playerUuid, message);
+player.sendMessage(Component.literal(processedMessage));
+```
+
+#### Obter Todos os Placeholders
+
+```java
+Map<String, String> placeholders = economyAPI.getAllPlaceholders(playerUuid);
+for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+    System.out.println(entry.getKey() + " = " + entry.getValue());
+}
+```
+
+#### Placeholders Disponíveis
+
+```java
+String[] availablePlaceholders = economyAPI.getAvailablePlaceholders();
+for (String placeholder : availablePlaceholders) {
+    System.out.println("Placeholder disponível: " + placeholder);
+}
+```
+
+**Lista de Placeholders:**
+
+- `%nighteconomy_<currency>_prefix%` - Nome da moeda
+- `%nighteconomy_<currency>_id%` - ID da moeda
+- `%nighteconomy_<currency>_balance%` - Saldo formatado do jogador
+- `%nighteconomy_<currency>_balance_raw%` - Saldo bruto do jogador
+- `%nighteconomy_<currency>_position%` - Posição no ranking
+- `%nighteconomy_<currency>_magnata%` - Tag de magnata (se aplicável)
+- `%nighteconomy_<currency>_top1_name%` - Nome do jogador top 1
+- `%nighteconomy_<currency>_top1_balance%` - Saldo do jogador top 1
+- `%nighteconomy_<currency>_ranking_enabled%` - Se o ranking está habilitado
+- `%nighteconomy_<currency>_payment_enabled%` - Se o jogador aceita pagamentos
+
+### 8. Sistema de Eventos
+
+#### Registrar um Listener
+
+```java
+public class MeuEconomyListener implements EconomyEventListener {
+    
+    @Override
+    public void onBalanceChange(UUID playerUuid, String currencyId, double oldBalance, double newBalance, String reason) {
+        System.out.println("Saldo alterado para " + playerUuid + " na moeda " + currencyId);
+        System.out.println("Saldo anterior: " + oldBalance + " | Novo saldo: " + newBalance);
+        System.out.println("Motivo: " + reason);
+    }
+    
+    @Override
+    public void onPayment(UUID fromUuid, UUID toUuid, String currencyId, double amount, double fee, boolean success) {
+        if (success) {
+            System.out.println("Pagamento realizado: " + amount + " de " + fromUuid + " para " + toUuid);
+        } else {
+            System.out.println("Pagamento falhou: " + amount + " de " + fromUuid + " para " + toUuid);
+        }
+    }
+    
+    @Override
+    public void onMagnataChanged(UUID playerUuid, String currencyId, UUID previousMagnataUuid) {
+        System.out.println("Novo magnata da moeda " + currencyId + ": " + playerUuid);
+        if (previousMagnataUuid != null) {
+            System.out.println("Magnata anterior: " + previousMagnataUuid);
+        }
+    }
+}
+
+// Registrar o listener
+MeuEconomyListener listener = new MeuEconomyListener();
+economyAPI.registerEconomyListener(listener);
+
+// Remover o listener quando não precisar mais
+economyAPI.unregisterEconomyListener(listener);
+```
+
+### 9. Configurações e Mensagens
+
+#### Recarregar Configurações
+
+```java
+// Recarregar todas as configurações
+economyAPI.reloadConfigurations();
+
+// Recarregar apenas uma moeda específica
+economyAPI.reloadCurrency("money");
+```
+
+#### Obter Mensagens Configuradas
+
+```java
+// Mensagem específica de uma moeda
+String message = economyAPI.getMessage("money", "insufficient-funds");
+
+// Mensagem global
+String globalMessage = economyAPI.getGlobalMessage("no-permission");
+```
+
+### 10. Utilitários
+
+#### Formatação de Valores
+
+```java
+double amount = 1234567.89;
+
+// Formatação com abreviações (K, M, B, etc.)
+String formatted = economyAPI.formatAmount("money", amount);
+System.out.println("Formatado: " + formatted); // Ex: "1.23M"
+
+// Formatação sem abreviações
+String raw = economyAPI.formatAmountRaw("money", amount);
+System.out.println("Bruto: " + raw); // Ex: "1234567.89"
+```
+
+#### Estatísticas de Moeda
+
+```java
+Map<String, Object> stats = economyAPI.getCurrencyStatistics("money");
+
+System.out.println("Total de jogadores: " + stats.get("totalPlayers"));
+System.out.println("Saldo total: " + stats.get("totalBalance"));
+System.out.println("Saldo médio: " + stats.get("averageBalance"));
+System.out.println("Top jogador: " + stats.get("topPlayer"));
+```
+
+#### Verificar Integrações
+
+```java
+// Verificar se LuckPerms está disponível
+if (economyAPI.isLuckPermsAvailable()) {
+    System.out.println("LuckPerms está disponível para placeholders!");
+}
+
+// Obter versão da API
+String version = economyAPI.getAPIVersion();
+System.out.println("Versão da API: " + version);
+```
+
+## Exemplos Práticos
+
+### Exemplo 1: Sistema de Loja
+
+```java
+public class MinhaLoja {
+    private NightEconomyAPI economyAPI;
+    
+    public boolean comprarItem(Player player, String item, double preco) {
+        UUID playerUuid = player.getUUID();
+        String currencyId = "money";
+        
+        // Verificar se o jogador tem saldo suficiente
+        if (!economyAPI.hasBalance(playerUuid, currencyId, preco)) {
+            player.sendMessage(Component.literal("§cVocê não tem dinheiro suficiente!"));
+            return false;
+        }
+        
+        // Remover o dinheiro
+        boolean success = economyAPI.subtractBalance(playerUuid, currencyId, preco);
+        if (success) {
+            // Dar o item ao jogador
+            darItem(player, item);
+            
+            // Registrar a transação
+            economyAPI.recordExternalTransaction(
+                currencyId,
+                playerUuid,
+                null,
+                preco,
+                "SHOP_PURCHASE",
+                "Compra na loja: " + item
+            );
+            
+            String formatted = economyAPI.formatAmount(currencyId, preco);
+            player.sendMessage(Component.literal("§aVocê comprou " + item + " por " + formatted + "!"));
+            return true;
+        }
+        
+        return false;
+    }
+}
+```
+
+### Exemplo 2: Sistema de Recompensas
+
+```java
+public class SistemaRecompensas implements EconomyEventListener {
+    private NightEconomyAPI economyAPI;
+    
+    public void darRecompensaQuest(Player player, double valor) {
+        UUID playerUuid = player.getUUID();
+        String currencyId = "money";
+        
+        economyAPI.ensureAccountExists(playerUuid, currencyId, player.getName().getString());
+        
+        boolean success = economyAPI.addBalance(playerUuid, currencyId, valor);
+        if (success) {
+            String formatted = economyAPI.formatAmount(currencyId, valor);
+            player.sendMessage(Component.literal("§aVocê recebeu " + formatted + " como recompensa!"));
+        }
+    }
+    
+    @Override
+    public void onMagnataChanged(UUID playerUuid, String currencyId, UUID previousMagnataUuid) {
+        // Dar recompensa especial para o novo magnata
+        if ("money".equals(currencyId)) {
+            economyAPI.addBalance(playerUuid, currencyId, 10000.0);
+            
+            // Enviar mensagem para todos os jogadores
+            String magnataTag = economyAPI.getMagnataTag(currencyId);
+            // Broadcast: "Novo magnata coroado!"
+        }
+    }
+}
+```
+
+### Exemplo 3: Integração com Placeholders
+
+```java
+public class MeuPlaceholderExpansion {
+    private NightEconomyAPI economyAPI;
+    
+    public String processCustomPlaceholder(Player player, String placeholder) {
+        UUID playerUuid = player.getUUID();
+        
+        // Usar placeholders do NightEconomy em seus próprios placeholders
+        if (placeholder.equals("meumod_saldo_total")) {
+            Map<String, Double> balances = economyAPI.getAllPlayerBalances(playerUuid);
+            double total = balances.values().stream().mapToDouble(Double::doubleValue).sum();
+            return String.format("%.2f", total);
+        }
+        
+        if (placeholder.equals("meumod_status_rico")) {
+            double balance = economyAPI.getBalance(playerUuid, "money");
+            return balance >= 1000000 ? "Rico" : "Pobre";
+        }
+        
+        return null;
+    }
+}
+```
+
+## Tratamento de Erros
+
+### Verificações Importantes
+
+```java
+// Sempre verificar se a API está disponível
+if (economyAPI == null) {
+    System.err.println("NightEconomy API não está disponível!");
+    return;
+}
+
+// Verificar se a moeda existe antes de usar
+if (!economyAPI.currencyExists("money")) {
+    System.err.println("Moeda 'money' não encontrada!");
+    return;
+}
+
+// Verificar se a conta existe antes de operações
+if (!economyAPI.hasAccount(playerUuid, "money")) {
+    economyAPI.ensureAccountExists(playerUuid, "money", username);
+}
+
+// Sempre verificar o resultado de operações críticas
+boolean success = economyAPI.setBalance(playerUuid, "money", 1000.0);
+if (!success) {
+    System.err.println("Falha ao definir saldo!");
+}
+```
+
+### Try-Catch para Operações Críticas
+
+```java
+try {
+    PaymentResult result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
+    if (!result.isSuccess()) {
+        // Tratar erro específico do pagamento
+        handlePaymentError(result.getMessage());
+    }
+} catch (Exception e) {
+    System.err.println("Erro inesperado durante pagamento: " + e.getMessage());
+    e.printStackTrace();
+}
+```
+
+## Melhores Práticas
+
+1. **Sempre verificar se a API está disponível** antes de usar
+2. **Verificar se as moedas existem** antes de realizar operações
+3. **Usar `ensureAccountExists()`** antes de operações de saldo
+4. **Tratar erros adequadamente** e fornecer feedback ao usuário
+5. **Registrar listeners de eventos** para reagir a mudanças no sistema
+6. **Usar formatação adequada** para exibir valores ao usuário
+7. **Registrar transações externas** para manter histórico completo
+8. **Remover listeners** quando não precisar mais deles
+
+## Suporte e Contribuições
+
+Para suporte, bugs ou sugestões:
+
+- **GitHub:** https://github.com/NightEconomy/NightEconomy
+- **Discord:** https://discord.gg/nighteconomy
+- **Wiki:** https://github.com/NightEconomy/NightEconomy/wiki
+
+## Changelog da API
+
+### Versão 2.0.0
+- Sistema multi-moeda completo
+- Integração com LuckPerms
+- Sistema de placeholders avançado
+- Sistema de eventos
+- API completa para desenvolvedores
+
+### Versão 1.0.0
+- Versão inicial com economia básica
+- Comandos simples de dinheiro
+- Sistema de banco de dados SQLite
+
