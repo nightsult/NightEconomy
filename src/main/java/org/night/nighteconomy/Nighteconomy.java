@@ -1,120 +1,244 @@
 package org.night.nighteconomy;
 
-import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockBehaviour;
-import net.minecraft.world.level.material.MapColor;
-import net.neoforged.api.distmarker.Dist;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import org.night.nighteconomy.api.NightEconomyAPI;
+import org.night.nighteconomy.api.NightEconomyAPIImpl;
+import org.night.nighteconomy.command.MultiCurrencyCommand;
+import org.night.nighteconomy.config.ConfigManager;
+import org.night.nighteconomy.database.MultiCurrencyDatabaseManager;
+import org.night.nighteconomy.placeholder.PlaceholderManager;
+import org.night.nighteconomy.ranking.RankingManager;
+import org.night.nighteconomy.service.MultiCurrencyEconomyService;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.neoforged.neoforge.registries.DeferredBlock;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredItem;
-import net.neoforged.neoforge.registries.DeferredRegister;
-import org.slf4j.Logger;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-// The value here should match an entry in the META-INF/neoforge.mods.toml file
-@Mod(Nighteconomy.MODID)
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+@Mod(org.night.nighteconomy.Nighteconomy.MODID)
 public class Nighteconomy {
-    // Define mod id in a common place for everything to reference
     public static final String MODID = "nighteconomy";
-    // Directly reference a slf4j logger
-    private static final Logger LOGGER = LogUtils.getLogger();
-    // Create a Deferred Register to hold Blocks which will all be registered under the "nighteconomy" namespace
-    public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
-    // Create a Deferred Register to hold Items which will all be registered under the "nighteconomy" namespace
-    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
-    // Create a Deferred Register to hold CreativeModeTabs which will all be registered under the "nighteconomy" namespace
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
-
-    // Creates a new Block with the id "nighteconomy:example_block", combining the namespace and path
-    public static final DeferredBlock<Block> EXAMPLE_BLOCK = BLOCKS.registerSimpleBlock("example_block", BlockBehaviour.Properties.of().mapColor(MapColor.STONE));
-    // Creates a new BlockItem with the id "nighteconomy:example_block", combining the namespace and path
-    public static final DeferredItem<BlockItem> EXAMPLE_BLOCK_ITEM = ITEMS.registerSimpleBlockItem("example_block", EXAMPLE_BLOCK);
-
-    // Creates a new food item with the id "nighteconomy:example_id", nutrition 1 and saturation 2
-    public static final DeferredItem<Item> EXAMPLE_ITEM = ITEMS.registerSimpleItem("example_item", new Item.Properties().food(new FoodProperties.Builder().alwaysEdible().nutrition(1).saturationModifier(2f).build()));
-
-    // Creates a creative tab with the id "nighteconomy:example_tab" for the example item, that is placed after the combat tab
-    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> EXAMPLE_TAB = CREATIVE_MODE_TABS.register("example_tab", () -> CreativeModeTab.builder().title(Component.translatable("itemGroup.nighteconomy")).withTabsBefore(CreativeModeTabs.COMBAT).icon(() -> EXAMPLE_ITEM.get().getDefaultInstance()).displayItems((parameters, output) -> {
-        output.accept(EXAMPLE_ITEM.get()); // Add the example item to the tab. For your own tabs, this method is preferred over the event
-    }).build());
-
-    // The constructor for the mod class is the first code that is run when your mod is loaded.
-    // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
+    public static final String VERSION = "2.0.0";
+    private static final Logger LOGGER = LogManager.getLogger();
+    
+    // Core components
+    private ConfigManager configManager;
+    private MultiCurrencyDatabaseManager databaseManager;
+    private MultiCurrencyEconomyService economyService;
+    private RankingManager rankingManager;
+    private PlaceholderManager placeholderManager;
+    private MultiCurrencyCommand commandManager;
+    private NightEconomyAPIImpl apiImpl;
+    
+    // Static instance for API access
+    private static org.night.nighteconomy.Nighteconomy instance;
+    
     public Nighteconomy(IEventBus modEventBus, ModContainer modContainer) {
-        // Register the commonSetup method for modloading
-        modEventBus.addListener(this::commonSetup);
-
-        // Register the Deferred Register to the mod event bus so blocks get registered
-        BLOCKS.register(modEventBus);
-        // Register the Deferred Register to the mod event bus so items get registered
-        ITEMS.register(modEventBus);
-        // Register the Deferred Register to the mod event bus so tabs get registered
-        CREATIVE_MODE_TABS.register(modEventBus);
-
-        // Register ourselves for server and other game events we are interested in.
-        // Note that this is necessary if and only if we want *this* class (Nighteconomy) to respond directly to events.
-        // Do not add this line if there are no @SubscribeEvent-annotated functions in this class, like onServerStarting() below.
+        instance = this;
+        
+        // Register the setup method for modloading
+        modEventBus.addListener(this::setup);
+        
+        // Register ourselves for server and other game events we are interested in
         NeoForge.EVENT_BUS.register(this);
-
-        // Register the item to a creative tab
-        modEventBus.addListener(this::addCreative);
-
-        // Register our mod's ModConfigSpec so that FML can create and load the config file for us
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        
+        LOGGER.info("NightEconomy v{} inicializando...", VERSION);
     }
+    
+    private void setup(final FMLCommonSetupEvent event) {
+        LOGGER.info("Configurando NightEconomy...");
+        
+        // Initialize configuration
+        Path configDir = Paths.get("config", MODID);
+        configManager = new ConfigManager(configDir);
+        
+        // Initialize database
+        Path databasePath = configDir.resolve("nighteconomy.db");
+        databaseManager = new MultiCurrencyDatabaseManager(databasePath);
 
-    private void commonSetup(final FMLCommonSetupEvent event) {
-        // Some common setup code
-        LOGGER.info("HELLO FROM COMMON SETUP");
-
-        if (Config.logDirtBlock) LOGGER.info("DIRT BLOCK >> {}", BuiltInRegistries.BLOCK.getKey(Blocks.DIRT));
-
-        LOGGER.info(Config.magicNumberIntroduction + Config.magicNumber);
-
-        Config.items.forEach((item) -> LOGGER.info("ITEM >> {}", item.toString()));
+        // Initialize ranking manager
+        rankingManager = new RankingManager(databaseManager, configManager);
+        
+        // Initialize economy service
+        economyService = new MultiCurrencyEconomyService(databaseManager, configManager);
+        
+        // Initialize placeholder manager
+        placeholderManager = new PlaceholderManager(economyService, configManager);
+        placeholderManager.registerPlaceholders();
+        
+        // Initialize command manager
+        commandManager = new MultiCurrencyCommand(economyService, configManager);
+        
+        // Initialize API implementation
+        apiImpl = new NightEconomyAPIImpl(economyService, configManager, placeholderManager, rankingManager);
+        
+        LOGGER.info("NightEconomy v{} configurado com sucesso!", VERSION);
     }
-
-    // Add the example block item to the building blocks tab
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) event.accept(EXAMPLE_BLOCK_ITEM);
-    }
-
-    // You can use SubscribeEvent and let the Event Bus discover methods to call
+    
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-        // Do something when the server starts
-        LOGGER.info("HELLO from server starting");
+        LOGGER.info("Servidor iniciando - Carregando NightEconomy...");
+        
+        try {
+            // Ensure database is properly initialized
+            if (databaseManager != null) {
+                LOGGER.info("Banco de dados inicializado com sucesso!");
+            }
+            
+            // Load configurations
+            if (configManager != null) {
+                configManager.loadConfigurations();
+                LOGGER.info("Configurações carregadas com sucesso!");
+            }
+            
+            // Force initial ranking update for all currencies
+            if (rankingManager != null) {
+                rankingManager.forceUpdateAll();
+                LOGGER.info("Rankings inicializados com sucesso!");
+            }
+            
+            LOGGER.info("NightEconomy v{} carregado com sucesso no servidor!", VERSION);
+            
+        } catch (Exception e) {
+            LOGGER.error("Erro ao carregar NightEconomy no servidor: ", e);
+        }
+    }
+    
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        LOGGER.info("Servidor parando - Salvando dados do NightEconomy...");
+        
+        try {
+            // Shutdown economy service
+            if (economyService != null) {
+                economyService.shutdown();
+                LOGGER.info("Serviço de economia finalizado!");
+            }
+            
+            // Close database connections
+            if (databaseManager != null) {
+                databaseManager.close();
+                LOGGER.info("Conexões do banco de dados fechadas!");
+            }
+            
+            LOGGER.info("NightEconomy v{} finalizado com sucesso!", VERSION);
+            
+        } catch (Exception e) {
+            LOGGER.error("Erro ao finalizar NightEconomy: ", e);
+        }
+    }
+    
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        LOGGER.info("Registrando comandos do NightEconomy...");
+        
+        try {
+            if (commandManager != null) {
+                commandManager.register(event.getDispatcher());
+                LOGGER.info("Comandos registrados com sucesso!");
+            } else {
+                LOGGER.warn("CommandManager não inicializado - comandos não registrados!");
+            }
+        } catch (Exception e) {
+            LOGGER.error("Erro ao registrar comandos: ", e);
+        }
     }
 
-    // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
-    @EventBusSubscriber(modid = MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
-    public static class ClientModEvents {
-        @SubscribeEvent
-        public static void onClientSetup(FMLClientSetupEvent event) {
-            // Some client setup code
-            LOGGER.info("HELLO FROM CLIENT SETUP");
-            LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+    @SubscribeEvent
+    public void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
+        var p = (ServerPlayer) e.getEntity();
+        var cfg = Nighteconomy.getInstance().getConfigManager();
+        String currency = cfg.getCurrencies().containsKey("money") ? "money" : cfg.getCurrencies().keySet().iterator().next();
+        Nighteconomy.getAPI().ensureAccountExists(p.getUUID(), currency, p.getName().getString());
+    }
+
+    // Static getters for API access
+    public static org.night.nighteconomy.Nighteconomy getInstance() {
+        return instance;
+    }
+    
+    public static NightEconomyAPI getAPI() {
+        return instance != null ? instance.apiImpl : null;
+    }
+    
+    // Getters for components
+    public ConfigManager getConfigManager() {
+        return configManager;
+    }
+    
+    public MultiCurrencyDatabaseManager getDatabaseManager() {
+        return databaseManager;
+    }
+    
+    public MultiCurrencyEconomyService getEconomyService() {
+        return economyService;
+    }
+    
+    public RankingManager getRankingManager() {
+        return rankingManager;
+    }
+    
+    public PlaceholderManager getPlaceholderManager() {
+        return placeholderManager;
+    }
+    
+    public MultiCurrencyCommand getCommandManager() {
+        return commandManager;
+    }
+    
+    public NightEconomyAPIImpl getAPIImpl() {
+        return apiImpl;
+    }
+    
+    // Utility methods
+    public String getModId() {
+        return MODID;
+    }
+    
+    public String getVersion() {
+        return VERSION;
+    }
+    
+    public boolean isLoaded() {
+        return configManager != null && 
+               databaseManager != null && 
+               economyService != null && 
+               rankingManager != null && 
+               placeholderManager != null && 
+               commandManager != null && 
+               apiImpl != null;
+    }
+    
+    // Reload method for admin commands
+    public void reloadMod() {
+        LOGGER.info("Recarregando NightEconomy...");
+        
+        try {
+            // Reload configurations
+            if (configManager != null) {
+                configManager.reloadConfigurations();
+            }
+            
+            // Force ranking updates
+            if (rankingManager != null) {
+                rankingManager.forceUpdateAll();
+            }
+            
+            LOGGER.info("NightEconomy recarregado com sucesso!");
+            
+        } catch (Exception e) {
+            LOGGER.error("Erro ao recarregar NightEconomy: ", e);
         }
     }
 }
+

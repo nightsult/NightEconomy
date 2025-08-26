@@ -17,22 +17,22 @@ public class CurrencyConfig {
     private boolean ranking;
     private int update;
     private String magnata;
-    
+
     // Format configuration
     private FormatConfig format;
-    
+
     // Payment configuration
     private PaymentConfig payment;
-    
+
     // Commands configuration
     private CommandsConfig commands;
-    
+
     // Messages configuration
     private Map<String, String> messages;
-    
+
     // Constructors
     public CurrencyConfig() {}
-    
+
     public CurrencyConfig(String id, String name, double defaultValue) {
         this.id = id;
         this.name = name;
@@ -45,106 +45,106 @@ public class CurrencyConfig {
     // Getters and Setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
-    
+
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-    
+
     public double getDefaultValue() { return defaultValue; }
     public void setDefaultValue(double defaultValue) { this.defaultValue = defaultValue; }
-    
+
     public boolean isRanking() { return ranking; }
     public void setRanking(boolean ranking) { this.ranking = ranking; }
-    
+
     public int getUpdate() { return update; }
     public void setUpdate(int update) { this.update = update; }
-    
+
     public String getMagnata() { return magnata; }
     public void setMagnata(String magnata) { this.magnata = magnata; }
-    
+
     public FormatConfig getFormat() { return format; }
     public void setFormat(FormatConfig format) { this.format = format; }
-    
+
     public PaymentConfig getPayment() { return payment; }
     public void setPayment(PaymentConfig payment) { this.payment = payment; }
-    
+
     public CommandsConfig getCommands() { return commands; }
     public void setCommands(CommandsConfig commands) { this.commands = commands; }
-    
+
     public Map<String, String> getMessages() { return messages; }
     public void setMessages(Map<String, String> messages) { this.messages = messages; }
-    
+
     // Inner classes for nested configurations
     public static class FormatConfig {
         private String format;
         private SeparatorConfig separator;
         private MultiplesConfig multiples;
-        
+
         public String getFormat() { return format; }
         public void setFormat(String format) { this.format = format; }
-        
+
         public SeparatorConfig getSeparator() { return separator; }
         public void setSeparator(SeparatorConfig separator) { this.separator = separator; }
-        
+
         public MultiplesConfig getMultiples() { return multiples; }
         public void setMultiples(MultiplesConfig multiples) { this.multiples = multiples; }
     }
-    
+
     public static class SeparatorConfig {
         private String decimal;
         private String group;
         private String single;
-        
+
         public String getDecimal() { return decimal; }
         public void setDecimal(String decimal) { this.decimal = decimal; }
-        
+
         public String getGroup() { return group; }
         public void setGroup(String group) { this.group = group; }
-        
+
         public String getSingle() { return single; }
         public void setSingle(String single) { this.single = single; }
     }
-    
+
     public static class MultiplesConfig {
         private boolean enabled;
         private int start;
         private List<String> multiples;
-        
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        
+
         public int getStart() { return start; }
         public void setStart(int start) { this.start = start; }
-        
+
         public List<String> getMultiples() { return multiples; }
         public void setMultiples(List<String> multiples) { this.multiples = multiples; }
     }
-    
+
     public static class PaymentConfig {
         private boolean toggle;
         private double fee;
-        
+
         public boolean isToggle() { return toggle; }
         public void setToggle(boolean toggle) { this.toggle = toggle; }
-        
+
         public double getFee() { return fee; }
         public void setFee(double fee) { this.fee = fee; }
     }
-    
+
     public static class CommandsConfig {
         private List<String> main;
         private String permission;
         private SubcommandsConfig subcommands;
-        
+
         public List<String> getMain() { return main; }
         public void setMain(List<String> main) { this.main = main; }
-        
+
         public String getPermission() { return permission; }
         public void setPermission(String permission) { this.permission = permission; }
-        
+
         public SubcommandsConfig getSubcommands() { return subcommands; }
         public void setSubcommands(SubcommandsConfig subcommands) { this.subcommands = subcommands; }
     }
-    
+
     public static class SubcommandsConfig {
         private SubcommandConfig see;
         private SubcommandConfig pay;
@@ -156,61 +156,60 @@ public class CurrencyConfig {
         private SubcommandConfig reset;
         private SubcommandConfig reload;
         private SubcommandConfig togglePayment;
-        
-        // Getters and setters for all subcommands
+
         public SubcommandConfig getSee() { return see; }
         public void setSee(SubcommandConfig see) { this.see = see; }
-        
+
         public SubcommandConfig getPay() { return pay; }
         public void setPay(SubcommandConfig pay) { this.pay = pay; }
-        
+
         public SubcommandConfig getAdd() { return add; }
         public void setAdd(SubcommandConfig add) { this.add = add; }
-        
+
         public TransactionsConfig getTransactions() { return transactions; }
         public void setTransactions(TransactionsConfig transactions) { this.transactions = transactions; }
-        
+
         public SubcommandConfig getRemove() { return remove; }
         public void setRemove(SubcommandConfig remove) { this.remove = remove; }
-        
+
         public SubcommandConfig getSet() { return set; }
         public void setSet(SubcommandConfig set) { this.set = set; }
-        
+
         public SubcommandConfig getTop() { return top; }
         public void setTop(SubcommandConfig top) { this.top = top; }
-        
+
         public SubcommandConfig getReset() { return reset; }
         public void setReset(SubcommandConfig reset) { this.reset = reset; }
-        
+
         public SubcommandConfig getReload() { return reload; }
         public void setReload(SubcommandConfig reload) { this.reload = reload; }
-        
+
         public SubcommandConfig getTogglePayment() { return togglePayment; }
         public void setTogglePayment(SubcommandConfig togglePayment) { this.togglePayment = togglePayment; }
     }
-    
+
     public static class SubcommandConfig {
         private List<String> aliases;
         private String permission;
         private List<String> permissions;
-        
+
         public List<String> getAliases() { return aliases; }
         public void setAliases(List<String> aliases) { this.aliases = aliases; }
-        
+
         public String getPermission() { return permission; }
         public void setPermission(String permission) { this.permission = permission; }
-        
+
         public List<String> getPermissions() { return permissions; }
         public void setPermissions(List<String> permissions) { this.permissions = permissions; }
     }
-    
+
     public static class TransactionsConfig extends SubcommandConfig {
         private TransactionTypesConfig types;
-        
+
         public TransactionTypesConfig getTypes() { return types; }
         public void setTypes(TransactionTypesConfig types) { this.types = types; }
     }
-    
+
     public static class TransactionTypesConfig {
         private String all;
         private String add;
@@ -221,37 +220,38 @@ public class CurrencyConfig {
         private String payReceive;
         private String externalAdd;
         private String externalRemove;
-        
-        // Getters and setters
+
         public String getAll() { return all; }
         public void setAll(String all) { this.all = all; }
-        
+
         public String getAdd() { return add; }
         public void setAdd(String add) { this.add = add; }
-        
+
         public String getRemove() { return remove; }
         public void setRemove(String remove) { this.remove = remove; }
-        
+
         public String getSet() { return set; }
         public void setSet(String set) { this.set = set; }
-        
+
         public String getReset() { return reset; }
         public void setReset(String reset) { this.reset = reset; }
-        
+
         public String getPaySend() { return paySend; }
         public void setPaySend(String paySend) { this.paySend = paySend; }
-        
+
         public String getPayReceive() { return payReceive; }
         public void setPayReceive(String payReceive) { this.payReceive = payReceive; }
-        
+
         public String getExternalAdd() { return externalAdd; }
         public void setExternalAdd(String externalAdd) { this.externalAdd = externalAdd; }
-        
+
         public String getExternalRemove() { return externalRemove; }
         public void setExternalRemove(String externalRemove) { this.externalRemove = externalRemove; }
     }
+
+    // Default config with sensible values and all subcommands/messages
     public static CurrencyConfig createDefault(String id, String name) {
-        CurrencyConfig c = new CurrencyConfig(id, name, 0.0);
+        CurrencyConfig c = new CurrencyConfig(id, name, 100.0);
 
         // Format
         FormatConfig fmt = new FormatConfig();
@@ -264,7 +264,7 @@ public class CurrencyConfig {
         MultiplesConfig mul = new MultiplesConfig();
         mul.setEnabled(true);
         mul.setStart(1000);
-        mul.setMultiples(java.util.List.of("K","M","B","T"));
+        mul.setMultiples(java.util.List.of("K", "M", "B", "T"));
         fmt.setMultiples(mul);
         c.setFormat(fmt);
 
@@ -276,23 +276,63 @@ public class CurrencyConfig {
 
         // Commands
         CommandsConfig cmds = new CommandsConfig();
-        cmds.setMain(java.util.List.of(id)); // alias principal igual ao id
+        cmds.setMain(java.util.List.of(id));
         cmds.setPermission("nighteconomy." + id + ".use");
+
         SubcommandsConfig subs = new SubcommandsConfig();
-        // permissões default vazias; pode preencher conforme necessidade
+
+        java.util.function.Function<String, SubcommandConfig> mk = (perm) -> {
+            SubcommandConfig sc = new SubcommandConfig();
+            sc.setAliases(java.util.List.of());
+            sc.setPermission(perm);
+            sc.setPermissions(java.util.List.of());
+            return sc;
+        };
+
+        subs.setSee(mk.apply("nighteconomy." + id + ".see"));
+        subs.setPay(mk.apply("nighteconomy." + id + ".pay"));
+        subs.setAdd(mk.apply("nighteconomy." + id + ".add"));
+        subs.setRemove(mk.apply("nighteconomy." + id + ".remove"));
+        subs.setSet(mk.apply("nighteconomy." + id + ".set"));
+        subs.setTop(mk.apply("nighteconomy." + id + ".top"));
+        subs.setReset(mk.apply("nighteconomy." + id + ".reset"));
+        subs.setReload(mk.apply("nighteconomy." + id + ".reload"));
+        subs.setTogglePayment(mk.apply("nighteconomy." + id + ".toggle"));
+
+        TransactionsConfig tx = new TransactionsConfig();
+        tx.setAliases(java.util.List.of());
+        tx.setPermission("nighteconomy." + id + ".transactions");
+        tx.setPermissions(java.util.List.of("nighteconomy." + id + ".transactions.other"));
+
+        TransactionTypesConfig types = new TransactionTypesConfig();
+        types.setAll("ALL");
+        types.setAdd("ADD");
+        types.setRemove("REMOVE");
+        types.setSet("SET");
+        types.setReset("RESET");
+        types.setPaySend("PAY_SEND");
+        types.setPayReceive("PAY_RECEIVE");
+        types.setExternalAdd("EXTERNAL_ADD");
+        types.setExternalRemove("EXTERNAL_REMOVE");
+        tx.setTypes(types);
+
+        subs.setTransactions(tx);
         cmds.setSubcommands(subs);
         c.setCommands(cmds);
 
-        // Messages
-        java.util.Map<String,String> msgs = new HashMap<>();
-        msgs.put("balance.self", "&aSeu saldo: &f$amount");
-        msgs.put("balance.other", "&aSaldo de &f$player&a: &f$amount");
-        msgs.put("pay.sent", "&aVocê pagou &f$amount &apara &f$player&a.");
-        msgs.put("pay.received", "&aVocê recebeu &f$amount &ade &f$player&a.");
+        // Messages used by command code
+        Map<String, String> msgs = new HashMap<>();
+        msgs.put("balance", "&aSeu saldo atual: &f{amount}");
+        msgs.put("balance-other", "&aSaldo de {player}: &f{amount}");
+        msgs.put("pay-sent", "&aVocê pagou &f{amount} &apara &f{player}!");
+        msgs.put("pay-received", "&aVocê recebeu &f{amount} &ade &f{player}!");
+        msgs.put("insufficient-funds", "&cVocê não tem saldo suficiente!");
+        msgs.put("invalid-amount", "&cQuantia inválida!");
         c.setMessages(msgs);
 
         return c;
     }
+
     public static CurrencyConfig fromConfig(UnmodifiableConfig cfg) {
         if (cfg == null) return null;
 
@@ -327,8 +367,8 @@ public class CurrencyConfig {
                 MultiplesConfig mul = new MultiplesConfig();
                 mul.setEnabled(m.getOrElse("enabled", true));
                 mul.setStart(m.getOrElse("start", 1000));
-                java.util.List<String> list = m.get("multiples");
-                if (list == null) list = java.util.List.of("K","M","B","T");
+                List<String> list = m.get("multiples");
+                if (list == null) list = List.of("K", "M", "B", "T");
                 mul.setMultiples(list);
                 fmt.setMultiples(mul);
             }
@@ -349,21 +389,20 @@ public class CurrencyConfig {
         if (cfg.contains("commands")) {
             UnmodifiableConfig cm = cfg.get("commands");
             CommandsConfig cmds = new CommandsConfig();
-            cmds.setMain(cm.getOrElse("main", java.util.List.of(id)));
-            cmds.setPermission(cm.getOrElse("permission", "nighteconomy."+id+".use"));
+            cmds.setMain(cm.getOrElse("main", List.of(id)));
+            cmds.setPermission(cm.getOrElse("permission", "nighteconomy." + id + ".use"));
 
             if (cm.contains("subcommands")) {
                 UnmodifiableConfig sc = cm.get("subcommands");
                 SubcommandsConfig subs = new SubcommandsConfig();
 
-                // util para ler um SubcommandConfig
                 java.util.function.Function<String, SubcommandConfig> readSub = key -> {
                     if (!sc.contains(key)) return null;
                     UnmodifiableConfig sub = sc.get(key);
                     SubcommandConfig out = new SubcommandConfig();
-                    out.setAliases(sub.getOrElse("aliases", java.util.List.of()));
+                    out.setAliases(sub.getOrElse("aliases", List.of()));
                     out.setPermission(sub.getOrElse("permission", ""));
-                    out.setPermissions(sub.getOrElse("permissions", java.util.List.of()));
+                    out.setPermissions(sub.getOrElse("permissions", List.of()));
                     return out;
                 };
 
@@ -380,9 +419,9 @@ public class CurrencyConfig {
                 if (sc.contains("transactions")) {
                     UnmodifiableConfig tr = sc.get("transactions");
                     TransactionsConfig tcfg = new TransactionsConfig();
-                    tcfg.setAliases(tr.getOrElse("aliases", java.util.List.of()));
+                    tcfg.setAliases(tr.getOrElse("aliases", List.of()));
                     tcfg.setPermission(tr.getOrElse("permission", ""));
-                    tcfg.setPermissions(tr.getOrElse("permissions", java.util.List.of()));
+                    tcfg.setPermissions(tr.getOrElse("permissions", List.of()));
 
                     if (tr.contains("types")) {
                         UnmodifiableConfig ty = tr.get("types");
@@ -407,13 +446,48 @@ public class CurrencyConfig {
             c.setCommands(cmds);
         }
 
-        // messages
-        java.util.Map<String,String> msgs = cfg.get("messages");
-        if (msgs == null) msgs = new HashMap<>();
+        // messages (flatten and map nested keys)
+        Map<String, String> msgs = new HashMap<>();
+        if (cfg.contains("messages")) {
+            Object messagesObj = cfg.get("messages");
+            if (messagesObj instanceof UnmodifiableConfig uc) {
+                // Pre-map common nested keys to flat keys expected by commands
+                if (uc.contains("balance")) {
+                    Object bal = uc.get("balance");
+                    if (bal instanceof UnmodifiableConfig bc) {
+                        String self = bc.get("self");
+                        String other = bc.get("other");
+                        if (self != null) msgs.put("balance", self);
+                        if (other != null) msgs.put("balance-other", other);
+                    }
+                }
+                if (uc.contains("pay")) {
+                    Object pay = uc.get("pay");
+                    if (pay instanceof UnmodifiableConfig pc) {
+                        String sent = pc.get("sent");
+                        String received = pc.get("received");
+                        if (sent != null) msgs.put("pay-sent", sent);
+                        if (received != null) msgs.put("pay-received", received);
+                    }
+                }
+                // Generic flatten so any other nested entries are also available
+                flattenMessages("", uc, msgs);
+            } else if (messagesObj instanceof Map<?, ?> raw) {
+                for (Map.Entry<?, ?> e : raw.entrySet()) {
+                    Object k = e.getKey();
+                    Object v = e.getValue();
+                    if (k != null && v != null) {
+                        msgs.put(String.valueOf(k), String.valueOf(v));
+                    }
+                }
+            }
+        }
         c.setMessages(msgs);
 
         return c;
     }
+
+    // Save with explanatory comments (tutorial) for each setting
     public void saveToFile(Path file) {
         try (CommentedFileConfig cfg = CommentedFileConfig.builder(file)
                 .preserveInsertionOrder()
@@ -421,60 +495,127 @@ public class CurrencyConfig {
                 .writingMode(WritingMode.REPLACE)
                 .build()) {
 
-            CommentedConfig root = cfg; // é mutável
+            CommentedConfig root = cfg; // mutable
 
+            // Basic values
             root.set("id", getId());
-            root.set("name", getName());
-            root.set("defaultValue", getDefaultValue());
-            root.set("ranking", isRanking());
-            root.set("update", getUpdate());
-            root.set("magnata", getMagnata());
+            root.setComment("id", "Id da moeda. Sem espaços. Usado como chave interna e nos comandos (ex.: /" + getId() + ").");
 
+            root.set("name", getName());
+            root.setComment("name", "Nome visível da moeda. Aparece nas mensagens e listagens.");
+
+            root.set("defaultValue", getDefaultValue());
+            root.setComment("defaultValue", "Valor inicial de todos os jogadores nesta moeda.");
+
+            root.set("ranking", isRanking());
+            root.setComment("ranking", "Ativa (true) ou desativa (false) o sistema de ranking para esta moeda.");
+
+            root.set("update", getUpdate());
+            root.setComment("update", "Intervalo (segundos) para atualizar o cache do ranking quando ranking=true.");
+
+            root.set("magnata", getMagnata());
+            root.setComment("magnata", "Texto/ícone do 'magnata' (top 1). Suporta cores usando &.");
+
+            // Format section
             if (getFormat() != null) {
                 CommentedConfig f = CommentedConfig.inMemory();
+                root.set("format", f);
+                root.setComment("format", "Formatação de exibição dos valores desta moeda.");
+
                 f.set("format", getFormat().getFormat());
+                f.setComment("format", "Modelo do valor. Use {amount} para o número formatado. Ex.: \"&a{amount}\".");
 
                 if (getFormat().getSeparator() != null) {
                     CommentedConfig s = CommentedConfig.inMemory();
-                    s.set("decimal", getFormat().getSeparator().getDecimal());
-                    s.set("group", getFormat().getSeparator().getGroup());
-                    s.set("single", getFormat().getSeparator().getSingle());
                     f.set("separator", s);
+                    f.setComment("separator", "Separadores numéricos.");
+
+                    s.set("decimal", getFormat().getSeparator().getDecimal());
+                    s.setComment("decimal", "Separador decimal (ex.: , ou .).");
+
+                    s.set("group", getFormat().getSeparator().getGroup());
+                    s.setComment("group", "Separador de milhar (ex.: . ou ,).");
+
+                    s.set("single", getFormat().getSeparator().getSingle());
+                    s.setComment("single", "Separador entre valor e sufixo (ex.: espaço).");
                 }
 
                 if (getFormat().getMultiples() != null) {
                     CommentedConfig m = CommentedConfig.inMemory();
-                    m.set("enabled", getFormat().getMultiples().isEnabled());
-                    m.set("start", getFormat().getMultiples().getStart());
-                    m.set("multiples", getFormat().getMultiples().getMultiples());
                     f.set("multiples", m);
-                }
+                    f.setComment("multiples", "Abreviações para grandes valores.");
 
-                root.set("format", f);
+                    m.set("enabled", getFormat().getMultiples().isEnabled());
+                    m.setComment("enabled", "Ativa (true) ou desativa (false) a abreviação (K, M, B, T...).");
+
+                    m.set("start", getFormat().getMultiples().getStart());
+                    m.setComment("start", "Valor mínimo para aplicar abreviação (ex.: 1000).");
+
+                    m.set("multiples", getFormat().getMultiples().getMultiples());
+                    m.setComment("multiples", "Lista de sufixos em ordem (ex.: [\"K\",\"M\",\"B\",\"T\"]).");
+                }
             }
 
+            // Payment section
             if (getPayment() != null) {
                 CommentedConfig p = CommentedConfig.inMemory();
-                p.set("toggle", getPayment().isToggle());
-                p.set("fee", getPayment().getFee());
                 root.set("payment", p);
+                root.setComment("payment", "Pagamentos entre jogadores.");
+
+                p.set("toggle", getPayment().isToggle());
+                p.setComment("toggle", "Permite ao jogador ativar/desativar o recebimento de pagamentos.");
+
+                p.set("fee", getPayment().getFee());
+                p.setComment("fee", "Taxa cobrada em pagamentos (valor absoluto). Use 0.0 para nenhuma taxa.");
             }
 
+            // Commands section
             if (getCommands() != null) {
                 CommentedConfig cm = CommentedConfig.inMemory();
+                root.set("commands", cm);
+                root.setComment("commands", "Configuração de comandos desta moeda.");
+
                 cm.set("main", getCommands().getMain());
+                cm.setComment("main", "Lista de comandos principais/aliases que apontam para esta moeda (ex.: [\"" + getId() + "\"]).");
+
                 cm.set("permission", getCommands().getPermission());
+                cm.setComment("permission", "Permissão base para usar os comandos desta moeda.");
 
                 if (getCommands().getSubcommands() != null) {
                     CommentedConfig sc = CommentedConfig.inMemory();
+                    cm.set("subcommands", sc);
+                    cm.setComment("subcommands", "Permissões e aliases por subcomando.");
 
                     java.util.function.BiConsumer<String, SubcommandConfig> putSub = (key, sub) -> {
                         if (sub == null) return;
                         CommentedConfig s = CommentedConfig.inMemory();
-                        if (sub.getAliases() != null) s.set("aliases", sub.getAliases());
-                        if (sub.getPermission() != null) s.set("permission", sub.getPermission());
-                        if (sub.getPermissions() != null) s.set("permissions", sub.getPermissions());
                         sc.set(key, s);
+                        sc.setComment(key, switch (key) {
+                            case "see" -> "Ver saldo de outro jogador: /<cmd> <player>";
+                            case "pay" -> "Pagar outro jogador: /<cmd> pay <player> <amount>";
+                            case "add" -> "Adicionar saldo a um jogador: /<cmd> add <player> <amount>";
+                            case "remove" -> "Remover saldo de um jogador: /<cmd> remove <player> <amount>";
+                            case "set" -> "Definir saldo de um jogador: /<cmd> set <player> <amount>";
+                            case "top" -> "Exibir ranking: /<cmd> top";
+                            case "reset" -> "Resetar saldo de um jogador: /<cmd> reset <player>";
+                            case "reload" -> "Recarregar a configuração desta moeda: /<cmd> reload";
+                            case "togglePayment" -> "Ativar/desativar receber pagamentos: /<cmd> toggle";
+                            case "transactions" -> "Listar transações: /<cmd> transactions [player]";
+                            default -> "Subcomando " + key;
+                        });
+
+                        if (sub.getAliases() != null) {
+                            s.set("aliases", sub.getAliases());
+                            s.setComment("aliases", "Aliases adicionais para este subcomando.");
+                        }
+                        if (sub.getPermission() != null) {
+                            s.set("permission", sub.getPermission());
+                            s.setComment("permission", "Permissão necessária para executar este subcomando. Deixe vazio para não exigir.");
+                        }
+                        if (sub.getPermissions() != null) {
+                            s.set("permissions", sub.getPermissions());
+                            s.setComment("permissions", "Permissões extras (ex.: '...transactions.other' para ver transações de outro jogador).");
+                        }
                     };
 
                     putSub.accept("see", getCommands().getSubcommands().getSee());
@@ -490,38 +631,110 @@ public class CurrencyConfig {
                     if (getCommands().getSubcommands().getTransactions() != null) {
                         TransactionsConfig tr = getCommands().getSubcommands().getTransactions();
                         CommentedConfig tcfg = CommentedConfig.inMemory();
-                        if (tr.getAliases() != null) tcfg.set("aliases", tr.getAliases());
-                        if (tr.getPermission() != null) tcfg.set("permission", tr.getPermission());
-                        if (tr.getPermissions() != null) tcfg.set("permissions", tr.getPermissions());
+                        sc.set("transactions", tcfg);
+                        sc.setComment("transactions", "Subcomando para listar transações. 'permissions' controla ver de outros jogadores.");
+
+                        if (tr.getAliases() != null) {
+                            tcfg.set("aliases", tr.getAliases());
+                            tcfg.setComment("aliases", "Aliases adicionais para 'transactions'.");
+                        }
+                        if (tr.getPermission() != null) {
+                            tcfg.set("permission", tr.getPermission());
+                            tcfg.setComment("permission", "Permissão para usar /<cmd> transactions.");
+                        }
+                        if (tr.getPermissions() != null) {
+                            tcfg.set("permissions", tr.getPermissions());
+                            tcfg.setComment("permissions", "Permissões extras (ex.: '...transactions.other' para ver de outros).");
+                        }
 
                         if (tr.getTypes() != null) {
                             CommentedConfig ty = CommentedConfig.inMemory();
-                            ty.set("all", tr.getTypes().getAll());
-                            ty.set("add", tr.getTypes().getAdd());
-                            ty.set("remove", tr.getTypes().getRemove());
-                            ty.set("set", tr.getTypes().getSet());
-                            ty.set("reset", tr.getTypes().getReset());
-                            ty.set("paySend", tr.getTypes().getPaySend());
-                            ty.set("payReceive", tr.getTypes().getPayReceive());
-                            ty.set("externalAdd", tr.getTypes().getExternalAdd());
-                            ty.set("externalRemove", tr.getTypes().getExternalRemove());
                             tcfg.set("types", ty);
+                            tcfg.setComment("types", "Rótulos (apenas exibição) dos tipos de transação.");
+
+                            ty.set("all", tr.getTypes().getAll());
+                            ty.setComment("all", "Rótulo: Todas as transações.");
+                            ty.set("add", tr.getTypes().getAdd());
+                            ty.setComment("add", "Rótulo: Adição de saldo.");
+                            ty.set("remove", tr.getTypes().getRemove());
+                            ty.setComment("remove", "Rótulo: Remoção de saldo.");
+                            ty.set("set", tr.getTypes().getSet());
+                            ty.setComment("set", "Rótulo: Definição direta de saldo.");
+                            ty.set("reset", tr.getTypes().getReset());
+                            ty.setComment("reset", "Rótulo: Reset de saldo.");
+                            ty.set("paySend", tr.getTypes().getPaySend());
+                            ty.setComment("paySend", "Rótulo: Pagamento enviado.");
+                            ty.set("payReceive", tr.getTypes().getPayReceive());
+                            ty.setComment("payReceive", "Rótulo: Pagamento recebido.");
+                            ty.set("externalAdd", tr.getTypes().getExternalAdd());
+                            ty.setComment("externalAdd", "Rótulo: Crédito externo (integração).");
+                            ty.set("externalRemove", tr.getTypes().getExternalRemove());
+                            ty.setComment("externalRemove", "Rótulo: Débito externo (integração).");
                         }
-
-                        sc.set("transactions", tcfg);
                     }
-
-                    cm.set("subcommands", sc);
                 }
-
-                root.set("commands", cm);
             }
 
+            // Messages section (flat keys with comments)
             if (getMessages() != null) {
-                root.set("messages", toNode(this.messages));
+                CommentedConfig msg = CommentedConfig.inMemory();
+                root.set("messages", msg);
+                root.setComment("messages", "Mensagens desta moeda. Placeholders: {amount}, {player}. Use & para cores.");
+
+                putMessageWithComment(msg, "balance",
+                        getMessages().get("balance"),
+                        "Ao usar /<cmd>: mensagem do próprio jogador (saldo atual).");
+
+                putMessageWithComment(msg, "balance-other",
+                        getMessages().get("balance-other"),
+                        "Ao usar /<cmd> <player>: saldo de outro jogador. Placeholders: {player}, {amount}");
+
+                putMessageWithComment(msg, "pay-sent",
+                        getMessages().get("pay-sent"),
+                        "Ao enviar um pagamento. Placeholders: {player}, {amount}");
+
+                putMessageWithComment(msg, "pay-received",
+                        getMessages().get("pay-received"),
+                        "Ao receber um pagamento. Placeholders: {player}, {amount}");
+
+                putMessageWithComment(msg, "insufficient-funds",
+                        getMessages().get("insufficient-funds"),
+                        "Erro: saldo insuficiente para a operação.");
+
+                putMessageWithComment(msg, "invalid-amount",
+                        getMessages().get("invalid-amount"),
+                        "Erro: quantia inválida.");
+
+                // Preserve any additional keys not covered above
+                for (Map.Entry<String, String> e : this.messages.entrySet()) {
+                    String k = e.getKey();
+                    if (!msg.contains(k)) {
+                        msg.set(k, e.getValue());
+                    }
+                }
             }
 
             cfg.save();
+        }
+    }
+
+    private static void putMessageWithComment(CommentedConfig msg, String key, String value, String comment) {
+        if (value != null) {
+            msg.set(key, value);
+            msg.setComment(key, comment);
+        }
+    }
+
+    private static void flattenMessages(String prefix, UnmodifiableConfig uc, Map<String, String> out) {
+        for (Map.Entry<String, Object> e : uc.valueMap().entrySet()) {
+            String key = e.getKey();
+            Object val = e.getValue();
+            String full = prefix.isEmpty() ? key : prefix + "-" + key;
+            if (val instanceof UnmodifiableConfig nested) {
+                flattenMessages(full, nested, out);
+            } else if (val != null) {
+                out.put(full, String.valueOf(val));
+            }
         }
     }
 
@@ -537,6 +750,4 @@ public class CurrencyConfig {
         }
         return node;
     }
-
 }
-

@@ -47,78 +47,93 @@ public class MultiCurrencyCommand {
         // Register global economy command
         registerGlobalEconomyCommand(dispatcher);
     }
-    
+
     private void registerCurrencyCommands(CommandDispatcher<CommandSourceStack> dispatcher, String currencyId, CurrencyConfig config) {
         if (config.getCommands() == null || config.getCommands().getMain() == null) {
             return;
         }
-        
-        // Register main commands (e.g., /money, /coins, /balance)
+
         for (String mainCommand : config.getCommands().getMain()) {
+            // Subcomandos com null-safety
+            CurrencyConfig.SubcommandsConfig subs = config.getCommands().getSubcommands();
+
+            CurrencyConfig.SubcommandConfig seeSub    = (subs != null) ? subs.getSee() : null;
+            CurrencyConfig.SubcommandConfig paySub    = (subs != null) ? subs.getPay() : null;
+            CurrencyConfig.SubcommandConfig addSub    = (subs != null) ? subs.getAdd() : null;
+            CurrencyConfig.SubcommandConfig removeSub = (subs != null) ? subs.getRemove() : null;
+            CurrencyConfig.SubcommandConfig setSub    = (subs != null) ? subs.getSet() : null;
+            CurrencyConfig.SubcommandConfig topSub    = (subs != null) ? subs.getTop() : null;
+            CurrencyConfig.SubcommandConfig resetSub  = (subs != null) ? subs.getReset() : null;
+            CurrencyConfig.SubcommandConfig reloadSub = (subs != null) ? subs.getReload() : null;
+            CurrencyConfig.SubcommandConfig toggleSub = (subs != null) ? subs.getTogglePayment() : null;
+
+            CurrencyConfig.TransactionsConfig txSub   = (subs != null) ? subs.getTransactions() : null;
+            java.util.List<String> txPerms            = (txSub != null) ? txSub.getPermissions() : null;
+
             dispatcher.register(Commands.literal(mainCommand)
-                .executes(context -> showBalance(context, currencyId))
-                
-                // /money <player> - See other player's balance
-                .then(Commands.argument("player", EntityArgument.player())
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getSee()))
-                    .executes(context -> showOtherBalance(context, currencyId)))
-                
-                // /money pay <player> <amount>
-                .then(Commands.literal("pay")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getPay()))
+                    .executes(context -> showBalance(context, currencyId))
+
+                    // /<cmd> <player>
                     .then(Commands.argument("player", EntityArgument.player())
-                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                            .executes(context -> payPlayer(context, currencyId)))))
-                
-                // /money add <player> <amount>
-                .then(Commands.literal("add")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getAdd()))
-                    .then(Commands.argument("player", EntityArgument.player())
-                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                            .executes(context -> addMoney(context, currencyId)))))
-                
-                // /money remove <player> <amount>
-                .then(Commands.literal("remove")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getRemove()))
-                    .then(Commands.argument("player", EntityArgument.player())
-                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                            .executes(context -> removeMoney(context, currencyId)))))
-                
-                // /money set <player> <amount>
-                .then(Commands.literal("set")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getSet()))
-                    .then(Commands.argument("player", EntityArgument.player())
-                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
-                            .executes(context -> setMoney(context, currencyId)))))
-                
-                // /money top
-                .then(Commands.literal("top")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getTop()))
-                    .executes(context -> showRanking(context, currencyId)))
-                
-                // /money reset <player>
-                .then(Commands.literal("reset")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getReset()))
-                    .then(Commands.argument("player", EntityArgument.player())
-                        .executes(context -> resetPlayer(context, currencyId))))
-                
-                // /money reload
-                .then(Commands.literal("reload")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getReload()))
-                    .executes(context -> reloadCurrency(context, currencyId)))
-                
-                // /money toggle
-                .then(Commands.literal("toggle")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getTogglePayment()))
-                    .executes(context -> togglePayments(context, currencyId)))
-                
-                // /money transactions
-                .then(Commands.literal("transactions")
-                    .requires(source -> hasPermission(source, config.getCommands().getSubcommands().getTransactions()))
-                    .executes(context -> showTransactions(context, currencyId))
-                    .then(Commands.argument("player", EntityArgument.player())
-                        .requires(source -> hasPermissionList(source, config.getCommands().getSubcommands().getTransactions().getPermissions()))
-                        .executes(context -> showOtherTransactions(context, currencyId))))
+                            .requires(source -> hasPermission(source, seeSub))
+                            .executes(context -> showOtherBalance(context, currencyId)))
+
+                    // /<cmd> pay <player> <amount>
+                    .then(Commands.literal("pay")
+                            .requires(source -> hasPermission(source, paySub))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
+                                            .executes(context -> payPlayer(context, currencyId)))))
+
+                    // /<cmd> add <player> <amount>
+                    .then(Commands.literal("add")
+                            .requires(source -> hasPermission(source, addSub))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
+                                            .executes(context -> addMoney(context, currencyId)))))
+
+                    // /<cmd> remove <player> <amount>
+                    .then(Commands.literal("remove")
+                            .requires(source -> hasPermission(source, removeSub))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
+                                            .executes(context -> removeMoney(context, currencyId)))))
+
+                    // /<cmd> set <player> <amount>
+                    .then(Commands.literal("set")
+                            .requires(source -> hasPermission(source, setSub))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
+                                            .executes(context -> setMoney(context, currencyId)))))
+
+                    // /<cmd> top
+                    .then(Commands.literal("top")
+                            .requires(source -> hasPermission(source, topSub))
+                            .executes(context -> showRanking(context, currencyId)))
+
+                    // /<cmd> reset <player>
+                    .then(Commands.literal("reset")
+                            .requires(source -> hasPermission(source, resetSub))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .executes(context -> resetPlayer(context, currencyId))))
+
+                    // /<cmd> reload
+                    .then(Commands.literal("reload")
+                            .requires(source -> hasPermission(source, reloadSub))
+                            .executes(context -> reloadCurrency(context, currencyId)))
+
+                    // /<cmd> toggle
+                    .then(Commands.literal("toggle")
+                            .requires(source -> hasPermission(source, toggleSub))
+                            .executes(context -> togglePayments(context, currencyId)))
+
+                    // /<cmd> transactions [player]
+                    .then(Commands.literal("transactions")
+                            .requires(source -> hasPermission(source, txSub))
+                            .executes(context -> showTransactions(context, currencyId))
+                            .then(Commands.argument("player", EntityArgument.player())
+                                    .requires(source -> hasPermissionList(source, txPerms))
+                                    .executes(context -> showOtherTransactions(context, currencyId))))
             );
         }
     }
