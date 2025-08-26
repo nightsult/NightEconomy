@@ -3,528 +3,802 @@ package org.night.nighteconomy.database;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 
+/**
+ * Database manager with prepared statement reuse, atomic pay transaction,
+ * transaction retention, and tuned SQLite PRAGMAs.
+ * All methods are intended to be called ONLY from the dbExecutor single thread.
+ */
 public class MultiCurrencyDatabaseManager {
     private static final Logger LOGGER = LogManager.getLogger();
-    private static final String DATABASE_NAME = "nighteconomy.db";
-    private Connection connection;
-    private final Path dbPath;
 
-    public MultiCurrencyDatabaseManager(Path dbPath) {
-        this.dbPath = dbPath;
-        initializeDatabase();
+    private final Connection conn;
+
+    // Tunable PRAGMA defaults (can be changed at runtime via setters)
+    private int busyTimeoutMs = 10_000;           // default 10s
+    private int walAutocheckpointPages = 1000;    // default ~1000 frames
+    private long mmapSizeBytes = 268_435_456L;    // default 256 MiB (0 to disable)
+
+    // Prepared statements (reused)
+    private PreparedStatement psHasAccount;
+    private PreparedStatement psCreateAccount;
+    private PreparedStatement psGetBalance;
+    private PreparedStatement psSetBalance;
+    private PreparedStatement psAddBalance;
+    private PreparedStatement psSubBalanceNoCheck;
+    private PreparedStatement psResetBalance;
+    private PreparedStatement psIsPaymentEnabled;
+    private PreparedStatement psSetPaymentEnabled;
+    private PreparedStatement psRecordTransaction;
+    private PreparedStatement psGetPlayerTransactions;
+    private PreparedStatement psGetAllPlayerBalances;
+    private PreparedStatement psGetTopPlayers;
+    private PreparedStatement psGetPlayerPosition;
+    private PreparedStatement psGetTopPlayerUuid;
+    private PreparedStatement psDeleteRankingCache;
+    private PreparedStatement psInsertRankingCache; // uses window function (SQLite 3.25+)
+    // Retenção de transactions
+    private PreparedStatement psDeleteOldTransactionsDays;
+
+    public MultiCurrencyDatabaseManager(Connection conn) throws SQLException {
+        this.conn = conn;
+        this.conn.setAutoCommit(true);
+
+        // Apply and log PRAGMAs early
+        applyPragmas();
+        logEnvironment();
+
+        // Ensure schema exists BEFORE preparing statements
+        ensureSchema();
+
+        // Now prepare statements safely
+        prepareStatements();
     }
 
-    public void initializeTables() {
-        try {
-            createTables();
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao assegurar/criar tabelas: ", e);
-        }
-    }
+    // ------------------- PRAGMAs -------------------
 
-
-    private void initializeDatabase() {
-        try {
-            // cria diretório do DB
-            Files.createDirectories(dbPath.getParent());
-
-            // conecta no SQLite
-            String url = "jdbc:sqlite:" + dbPath.toString();
-            connection = DriverManager.getConnection(url);
-
-            // PRAGMAs úteis (opcional, melhora performance)
-            try (Statement pragma = connection.createStatement()) {
-                pragma.execute("PRAGMA journal_mode=WAL;");
-                pragma.execute("PRAGMA synchronous=NORMAL;");
-                pragma.execute("PRAGMA temp_store=MEMORY;");
-                pragma.execute("PRAGMA foreign_keys=ON;");
-            }
-
-            // cria tabelas
-            createTables();
-
-            LOGGER.info("Banco de dados multi-moeda inicializado em {}", dbPath);
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao inicializar banco de dados: ", e);
-        } catch (Exception e) {
-            LOGGER.error("Falha de I/O ao preparar diretório do banco: ", e);
-        }
-    }
-
-    // Account management
-    public boolean createAccount(UUID playerUuid, String currencyId, String username, double defaultBalance) {
-        String sql = "INSERT OR IGNORE INTO accounts (uuid, currency_id, username, balance) VALUES (?, ?, ?, ?)";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerUuid.toString());
-            pstmt.setString(2, currencyId);
-            pstmt.setString(3, username);
-            pstmt.setDouble(4, defaultBalance);
-            
-            int rowsAffected = pstmt.executeUpdate();
-            return rowsAffected > 0;
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao criar conta para " + username + " na moeda " + currencyId + ": ", e);
-            return false;
-        }
-    }
-    
-    public double getBalance(UUID playerUuid, String currencyId) {
-        String sql = "SELECT balance FROM accounts WHERE uuid = ? AND currency_id = ?";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerUuid.toString());
-            pstmt.setString(2, currencyId);
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
+    private void applyPragmas() throws SQLException {
+        try (Statement st = conn.createStatement()) {
+            st.execute("PRAGMA foreign_keys = ON");
+            // Journal mode WAL
+            try (ResultSet rs = st.executeQuery("PRAGMA journal_mode = WAL")) {
                 if (rs.next()) {
-                    return rs.getDouble("balance");
+                    String mode = rs.getString(1);
+                    LOGGER.info("SQLite journal_mode set to {}", mode);
                 }
             }
-            
+
+            // Busy timeout (ms)
+            st.execute("PRAGMA busy_timeout = " + busyTimeoutMs);
+
+            // WAL autocheckpoint (frames/pages)
+            st.execute("PRAGMA wal_autocheckpoint = " + walAutocheckpointPages);
+
+            // Try to enable mmap (bytes). Some platforms may clamp or disable.
+            if (mmapSizeBytes >= 0) {
+                st.execute("PRAGMA mmap_size = " + mmapSizeBytes);
+            }
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter saldo para " + playerUuid + " na moeda " + currencyId + ": ", e);
+            LOGGER.warn("Failed to apply PRAGMAs: {}", e.getMessage());
+            throw e;
         }
-        
-        return 0.0;
+
+        // Additional DB responsiveness and safety recommendations (best-effort logs)
+        logPragmasStatus();
     }
-    
-    public boolean setBalance(UUID playerUuid, String currencyId, double amount) {
-        String sql = "UPDATE accounts SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ? AND currency_id = ?";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setDouble(1, amount);
-            pstmt.setString(2, playerUuid.toString());
-            pstmt.setString(3, currencyId);
-            
-            int rowsAffected = pstmt.executeUpdate();
-            return rowsAffected > 0;
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao definir saldo para " + playerUuid + " na moeda " + currencyId + ": ", e);
-            return false;
-        }
-    }
-    
-    public boolean addBalance(UUID playerUuid, String currencyId, double amount) {
-        double currentBalance = getBalance(playerUuid, currencyId);
-        return setBalance(playerUuid, currencyId, currentBalance + amount);
-    }
-    
-    public boolean subtractBalance(UUID playerUuid, String currencyId, double amount) {
-        double currentBalance = getBalance(playerUuid, currencyId);
-        if (currentBalance >= amount) {
-            return setBalance(playerUuid, currencyId, currentBalance - amount);
-        }
-        return false;
-    }
-    
-    // Payment settings
-    public boolean isPaymentEnabled(UUID playerUuid, String currencyId) {
-        String sql = "SELECT payment_enabled FROM accounts WHERE uuid = ? AND currency_id = ?";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerUuid.toString());
-            pstmt.setString(2, currencyId);
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
+
+    private void logEnvironment() {
+        try (Statement st = conn.createStatement()) {
+            try (ResultSet rs = st.executeQuery("select sqlite_version()")) {
                 if (rs.next()) {
-                    return rs.getBoolean("payment_enabled");
+                    LOGGER.info("SQLite version: {}", rs.getString(1));
                 }
             }
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao verificar configuração de pagamento: ", e);
-        }
-        
-        return true; // Default to enabled
-    }
-    
-    public boolean setPaymentEnabled(UUID playerUuid, String currencyId, boolean enabled) {
-        String sql = "UPDATE accounts SET payment_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ? AND currency_id = ?";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setBoolean(1, enabled);
-            pstmt.setString(2, playerUuid.toString());
-            pstmt.setString(3, currencyId);
-            
-            int rowsAffected = pstmt.executeUpdate();
-            return rowsAffected > 0;
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao definir configuração de pagamento: ", e);
-            return false;
-        }
-    }
-    
-    // Transaction management
-    public boolean recordTransaction(String currencyId, UUID fromUuid, UUID toUuid, double amount, double fee, String type, String description) {
-        String sql = "INSERT INTO transactions (currency_id, from_uuid, to_uuid, amount, fee, type, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, currencyId);
-            pstmt.setString(2, fromUuid != null ? fromUuid.toString() : null);
-            pstmt.setString(3, toUuid != null ? toUuid.toString() : null);
-            pstmt.setDouble(4, amount);
-            pstmt.setDouble(5, fee);
-            pstmt.setString(6, type);
-            pstmt.setString(7, description);
-            
-            int rowsAffected = pstmt.executeUpdate();
-            return rowsAffected > 0;
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao registrar transação: ", e);
-            return false;
-        }
-    }
-    
-    public List<Transaction> getPlayerTransactions(UUID playerUuid, String currencyId, int limit) {
-        String sql = """
-            SELECT * FROM transactions 
-            WHERE currency_id = ? AND (from_uuid = ? OR to_uuid = ?) 
-            ORDER BY timestamp DESC 
-            LIMIT ?
-        """;
-        
-        List<Transaction> transactions = new ArrayList<>();
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, currencyId);
-            pstmt.setString(2, playerUuid.toString());
-            pstmt.setString(3, playerUuid.toString());
-            pstmt.setInt(4, limit);
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
+
+            // compile_options are optional; safe to log at DEBUG
+            try (ResultSet rs = st.executeQuery("PRAGMA compile_options")) {
+                List<String> options = new ArrayList<>();
                 while (rs.next()) {
-                    Transaction transaction = new Transaction();
-                    transaction.setId(rs.getLong("id"));
-                    transaction.setCurrencyId(rs.getString("currency_id"));
-                    transaction.setFromUuid(rs.getString("from_uuid"));
-                    transaction.setToUuid(rs.getString("to_uuid"));
-                    transaction.setAmount(rs.getDouble("amount"));
-                    transaction.setFee(rs.getDouble("fee"));
-                    transaction.setType(rs.getString("type"));
-                    transaction.setDescription(rs.getString("description"));
-                    transaction.setTimestamp(rs.getTimestamp("timestamp"));
-                    transactions.add(transaction);
+                    options.add(rs.getString(1));
+                }
+                if (!options.isEmpty()) {
+                    LOGGER.debug("SQLite compile options: {}", String.join(", ", options));
                 }
             }
-            
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter transações do jogador: ", e);
+            LOGGER.debug("Unable to query SQLite environment: {}", e.getMessage());
         }
-        
-        return transactions;
     }
 
-    // NOVO: verificação real de existência da conta
+    private String getSinglePragma(String pragma) {
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA " + pragma)) {
+            if (rs.next()) {
+                return rs.getString(1);
+            }
+        } catch (SQLException ignored) { }
+        return null;
+    }
+
+    private void logPragmasStatus() {
+        String journalMode = getSinglePragma("journal_mode");
+        String timeout = getSinglePragma("busy_timeout");
+        String autoCheckpoint = getSinglePragma("wal_autocheckpoint");
+        String mmap = getSinglePragma("mmap_size");
+        String synchronous = getSinglePragma("synchronous");
+
+        LOGGER.info("SQLite PRAGMA status -> journal_mode={}, busy_timeout(ms)={}, wal_autocheckpoint={}, mmap_size(bytes)={}, synchronous={}",
+                journalMode, timeout, autoCheckpoint, mmap, synchronous);
+    }
+
+    public void setBusyTimeoutMs(int busyTimeoutMs) {
+        if (busyTimeoutMs < 0) busyTimeoutMs = 0;
+        this.busyTimeoutMs = busyTimeoutMs;
+        try (Statement st = conn.createStatement()) {
+            st.execute("PRAGMA busy_timeout = " + busyTimeoutMs);
+            LOGGER.info("Updated PRAGMA busy_timeout to {} ms", busyTimeoutMs);
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to update busy_timeout: {}", e.getMessage());
+        }
+    }
+
+    public void setWalAutocheckpointPages(int walAutocheckpointPages) {
+        if (walAutocheckpointPages < 0) walAutocheckpointPages = 0;
+        this.walAutocheckpointPages = walAutocheckpointPages;
+        try (Statement st = conn.createStatement()) {
+            st.execute("PRAGMA wal_autocheckpoint = " + walAutocheckpointPages);
+            LOGGER.info("Updated PRAGMA wal_autocheckpoint to {} pages", walAutocheckpointPages);
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to update wal_autocheckpoint: {}", e.getMessage());
+        }
+    }
+
+    public void setMmapSizeBytes(long mmapSizeBytes) {
+        if (mmapSizeBytes < 0) mmapSizeBytes = 0;
+        this.mmapSizeBytes = mmapSizeBytes;
+        try (Statement st = conn.createStatement()) {
+            st.execute("PRAGMA mmap_size = " + mmapSizeBytes);
+            String actual = getSinglePragma("mmap_size");
+            LOGGER.info("Updated PRAGMA mmap_size request={} bytes, actual={}", mmapSizeBytes, actual);
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to update mmap_size: {}", e.getMessage());
+        }
+    }
+
+    public int getBusyTimeoutMs() { return busyTimeoutMs; }
+    public int getWalAutocheckpointPages() { return walAutocheckpointPages; }
+    public long getMmapSizeBytes() { return mmapSizeBytes; }
+
+    // ------------------- Schema -------------------
+
+    private void ensureSchema() throws SQLException {
+        // Use user_version to allow future migrations if needed
+        int userVersion = 0;
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA user_version")) {
+            if (rs.next()) userVersion = rs.getInt(1);
+        } catch (SQLException e) {
+            LOGGER.warn("Could not read PRAGMA user_version: {}", e.getMessage());
+        }
+
+        // Initial creation (version 1)
+        if (userVersion == 0) {
+            LOGGER.info("Initializing NightEconomy schema (v1)...");
+            try (Statement st = conn.createStatement()) {
+                st.execute("""
+                        CREATE TABLE IF NOT EXISTS accounts (
+                          uuid TEXT NOT NULL,
+                          currency_id TEXT NOT NULL,
+                          username TEXT NOT NULL,
+                          balance REAL NOT NULL DEFAULT 0,
+                          payment_enabled INTEGER NOT NULL DEFAULT 1,
+                          PRIMARY KEY (uuid, currency_id)
+                        )
+                        """);
+
+                st.execute("""
+                        CREATE TABLE IF NOT EXISTS transactions (
+                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          currency_id TEXT NOT NULL,
+                          sender_uuid TEXT,
+                          receiver_uuid TEXT,
+                          amount REAL NOT NULL,
+                          fee REAL NOT NULL DEFAULT 0,
+                          type TEXT NOT NULL,
+                          description TEXT,
+                          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """);
+
+                // Helpful indexes for transaction queries
+                st.execute("CREATE INDEX IF NOT EXISTS idx_tx_sender_currency_date ON transactions(sender_uuid, currency_id, created_at DESC)");
+                st.execute("CREATE INDEX IF NOT EXISTS idx_tx_receiver_currency_date ON transactions(receiver_uuid, currency_id, created_at DESC)");
+                st.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_date ON transactions(currency_id, created_at DESC)");
+
+                st.execute("""
+                        CREATE TABLE IF NOT EXISTS ranking_cache (
+                          currency_id TEXT NOT NULL,
+                          uuid TEXT NOT NULL,
+                          username TEXT NOT NULL,
+                          balance REAL NOT NULL,
+                          position INTEGER NOT NULL,
+                          PRIMARY KEY (currency_id, position)
+                        )
+                        """);
+                // One player per currency in cache
+                st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_rank_currency_uuid ON ranking_cache(currency_id, uuid)");
+
+                // Optionally helpful account indexes
+                st.execute("CREATE INDEX IF NOT EXISTS idx_accounts_currency_uuid ON accounts(currency_id, uuid)");
+
+                // Set user_version to 1
+                st.execute("PRAGMA user_version = 1");
+            } catch (SQLException e) {
+                LOGGER.error("Failed to initialize schema: ", e);
+                throw e;
+            }
+            LOGGER.info("NightEconomy schema initialized (v1).");
+        }
+
+        // Future: migrations if (userVersion < 2) { ... set user_version=2; }
+    }
+
+    // ------------------- Prepared Statements -------------------
+
+    private void prepareStatements() throws SQLException {
+        // accounts: (uuid TEXT, currency_id TEXT, username TEXT, balance REAL, payment_enabled INTEGER)
+        psHasAccount = conn.prepareStatement(
+                "SELECT 1 FROM accounts WHERE uuid=? AND currency_id=?"
+        );
+        psCreateAccount = conn.prepareStatement(
+                "INSERT OR IGNORE INTO accounts (uuid, currency_id, username, balance, payment_enabled) VALUES (?,?,?,?,1)"
+        );
+        psGetBalance = conn.prepareStatement(
+                "SELECT balance FROM accounts WHERE uuid=? AND currency_id=?"
+        );
+        psSetBalance = conn.prepareStatement(
+                "UPDATE accounts SET balance=? WHERE uuid=? AND currency_id=?"
+        );
+        psAddBalance = conn.prepareStatement(
+                "UPDATE accounts SET balance = balance + ? WHERE uuid=? AND currency_id=?"
+        );
+        // sub sem verificação; a verificação de saldo é feita em transações atômicas ou pelo serviço
+        psSubBalanceNoCheck = conn.prepareStatement(
+                "UPDATE accounts SET balance = balance - ? WHERE uuid=? AND currency_id=?"
+        );
+        psResetBalance = conn.prepareStatement(
+                "UPDATE accounts SET balance=? WHERE uuid=? AND currency_id=?"
+        );
+        psIsPaymentEnabled = conn.prepareStatement(
+                "SELECT payment_enabled FROM accounts WHERE uuid=? AND currency_id=?"
+        );
+        psSetPaymentEnabled = conn.prepareStatement(
+                "UPDATE accounts SET payment_enabled=? WHERE uuid=? AND currency_id=?"
+        );
+        // transactions: (id INTEGER PK, currency_id TEXT, sender_uuid TEXT, receiver_uuid TEXT, amount REAL, fee REAL, type TEXT, description TEXT, created_at DATETIME)
+        psRecordTransaction = conn.prepareStatement(
+                "INSERT INTO transactions (currency_id, sender_uuid, receiver_uuid, amount, fee, type, description, created_at) " +
+                        "VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+        );
+        psGetPlayerTransactions = conn.prepareStatement(
+                "SELECT currency_id, sender_uuid, receiver_uuid, amount, fee, type, description, created_at " +
+                        "FROM transactions WHERE (sender_uuid=? OR receiver_uuid=?) AND currency_id=? " +
+                        "ORDER BY created_at DESC LIMIT ?"
+        );
+        psGetAllPlayerBalances = conn.prepareStatement(
+                "SELECT currency_id, balance FROM accounts WHERE uuid=?"
+        );
+        // ranking_cache: (currency_id TEXT, uuid TEXT, username TEXT, balance REAL, position INTEGER)
+        psGetTopPlayers = conn.prepareStatement(
+                "SELECT uuid, username, balance, position FROM ranking_cache " +
+                        "WHERE currency_id=? ORDER BY position ASC LIMIT ?"
+        );
+        psGetPlayerPosition = conn.prepareStatement(
+                "SELECT position FROM ranking_cache WHERE currency_id=? AND uuid=?"
+        );
+        psGetTopPlayerUuid = conn.prepareStatement(
+                "SELECT uuid FROM ranking_cache WHERE currency_id=? ORDER BY position ASC LIMIT 1"
+        );
+        psDeleteRankingCache = conn.prepareStatement(
+                "DELETE FROM ranking_cache WHERE currency_id=?"
+        );
+        // Window function requires SQLite 3.25+; if not available, replace with a manual ranking fill
+        psInsertRankingCache = conn.prepareStatement(
+                "INSERT INTO ranking_cache (currency_id, uuid, username, balance, position) " +
+                        "SELECT ?, a.uuid, a.username, a.balance, " +
+                        "ROW_NUMBER() OVER (ORDER BY a.balance DESC, a.uuid ASC) as pos " +
+                        "FROM accounts a WHERE a.currency_id=?"
+        );
+
+        // Retenção de transactions: apaga registros mais antigos que N dias
+        psDeleteOldTransactionsDays = conn.prepareStatement(
+                "DELETE FROM transactions WHERE julianday(created_at) < julianday('now') - ?"
+        );
+    }
+
+    // ------------------- Model Classes -------------------
+
+    public static class Transaction {
+        public final String currencyId;
+        public final String senderUuid;
+        public final String receiverUuid;
+        public final double amount;
+        public final double fee;
+        public final String type;
+        public final String description;
+        public final Timestamp createdAt;
+
+        public Transaction(String currencyId, String senderUuid, String receiverUuid,
+                           double amount, double fee, String type, String description, Timestamp createdAt) {
+            this.currencyId = currencyId;
+            this.senderUuid = senderUuid;
+            this.receiverUuid = receiverUuid;
+            this.amount = amount;
+            this.fee = fee;
+            this.type = type;
+            this.description = description;
+            this.createdAt = createdAt;
+        }
+
+        // Getters (compat)
+        public String getCurrencyId() { return currencyId; }
+        public String getSenderUuid() { return senderUuid; }
+        public String getReceiverUuid() { return receiverUuid; }
+        public double getAmount() { return amount; }
+        public double getFee() { return fee; }
+        public String getType() { return type; }
+        public String getDescription() { return description; }
+        public Timestamp getCreatedAt() { return createdAt; }
+    }
+
+    public static class RankingEntry {
+        public final String uuid;
+        public final String username;
+        public final double balance;
+        public final int position;
+
+        public RankingEntry(String uuid, String username, double balance, int position) {
+            this.uuid = uuid;
+            this.username = username;
+            this.balance = balance;
+            this.position = position;
+        }
+
+        // Getters (compat)
+        public String getUuid() { return uuid; }
+        public String getUsername() { return username; }
+        public double getBalance() { return balance; }
+        public int getPosition() { return position; }
+    }
+
+    // Atomic pay transaction result
+    public static class PayTxResult {
+        public enum Status { OK, RECEIVER_BLOCKED, INSUFFICIENT_FUNDS, SENDER_NOT_FOUND, RECEIVER_NOT_FOUND, ERROR }
+        public final Status status;
+
+        public PayTxResult(Status status) {
+            this.status = status;
+        }
+    }
+
+    // --------------- Basic account ops ----------------
+
     public boolean hasAccount(UUID playerUuid, String currencyId) {
-        String sql = "SELECT 1 FROM accounts WHERE uuid = ? AND currency_id = ? LIMIT 1";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerUuid.toString());
-            pstmt.setString(2, currencyId);
-            try (ResultSet rs = pstmt.executeQuery()) {
+        try {
+            psHasAccount.clearParameters();
+            psHasAccount.setString(1, playerUuid.toString());
+            psHasAccount.setString(2, currencyId);
+            try (ResultSet rs = psHasAccount.executeQuery()) {
                 return rs.next();
             }
         } catch (SQLException e) {
-            LOGGER.error("Erro ao verificar existência de conta: ", e);
+            LOGGER.error("hasAccount error", e);
             return false;
         }
     }
 
-    // OTIMIZADO: atualização do cache de ranking em transação e com um único INSERT...SELECT
-    public void updateRankingCache(String currencyId) {
-        boolean oldAutoCommit = true;
+    public boolean createAccount(UUID playerUuid, String currencyId, String username, double defaultValue) {
         try {
-            oldAutoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
-
-            // Limpa cache antigo
-            try (PreparedStatement clearStmt = connection.prepareStatement(
-                    "DELETE FROM ranking_cache WHERE currency_id = ?")) {
-                clearStmt.setString(1, currencyId);
-                clearStmt.executeUpdate();
-            }
-
-            // Insere novo cache de uma vez usando window function
-            // Nota: 'ROW_NUMBER() OVER (ORDER BY balance DESC)' requer SQLite 3.25+ (com suporte a window functions)
-            final String insertSql = """
-            INSERT INTO ranking_cache (currency_id, uuid, username, balance, position)
-            SELECT ? AS currency_id, uuid, username, balance,
-                   ROW_NUMBER() OVER (ORDER BY balance DESC) AS position
-            FROM accounts
-            WHERE currency_id = ? AND balance > 0
-            ORDER BY balance DESC
-            LIMIT 100
-        """;
-            try (PreparedStatement insertStmt = connection.prepareStatement(insertSql)) {
-                insertStmt.setString(1, currencyId);
-                insertStmt.setString(2, currencyId);
-                insertStmt.executeUpdate();
-            }
-
-            connection.commit();
-            LOGGER.debug("Cache de ranking atualizado (transação) para moeda: " + currencyId);
+            psCreateAccount.clearParameters();
+            psCreateAccount.setString(1, playerUuid.toString());
+            psCreateAccount.setString(2, currencyId);
+            psCreateAccount.setString(3, username);
+            psCreateAccount.setDouble(4, defaultValue);
+            int rows = psCreateAccount.executeUpdate();
+            return rows > 0;
         } catch (SQLException e) {
-            try { connection.rollback(); } catch (SQLException ignore) {}
-            LOGGER.error("Erro ao atualizar cache de ranking (transação): ", e);
-        } finally {
-            try { connection.setAutoCommit(oldAutoCommit); } catch (SQLException ignore) {}
+            LOGGER.error("createAccount error", e);
+            return false;
         }
     }
 
-    // REFORÇADO: criação de índices após criar tabelas (chame dentro de createTables ou initializeTables)
-    private void createIndices() throws SQLException {
-        try (Statement stmt = connection.createStatement()) {
-            // Para consultas de ranking por moeda (ordenando por balance para construir cache)
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_accounts_currency_balance ON accounts(currency_id, balance DESC)");
+    public double getBalance(UUID playerUuid, String currencyId) {
+        try {
+            psGetBalance.clearParameters();
+            psGetBalance.setString(1, playerUuid.toString());
+            psGetBalance.setString(2, currencyId);
+            try (ResultSet rs = psGetBalance.executeQuery()) {
+                if (rs.next()) return rs.getDouble(1);
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getBalance error", e);
+        }
+        return 0.0;
+    }
 
-            // Para histórico de transações (consultas por moeda+from/ou to ordenadas por timestamp)
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_from_time ON transactions(currency_id, from_uuid, timestamp DESC)");
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_to_time   ON transactions(currency_id, to_uuid, timestamp DESC)");
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_time      ON transactions(currency_id, timestamp DESC)");
-
-            // Para leitura do ranking já cacheado por moeda e posição
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_ranking_currency_pos  ON ranking_cache(currency_id, position)");
+    public boolean setBalance(UUID playerUuid, String currencyId, double amount) {
+        try {
+            psSetBalance.clearParameters();
+            psSetBalance.setDouble(1, amount);
+            psSetBalance.setString(2, playerUuid.toString());
+            psSetBalance.setString(3, currencyId);
+            return psSetBalance.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("setBalance error", e);
+            return false;
         }
     }
 
-    // CHAME createIndices() no final do createTables()
-    private void createTables() throws SQLException {
-        String createAccountsTable = """
-        CREATE TABLE IF NOT EXISTS accounts (
-            uuid TEXT NOT NULL,
-            currency_id TEXT NOT NULL,
-            username TEXT NOT NULL,
-            balance REAL NOT NULL DEFAULT 0.0,
-            payment_enabled BOOLEAN NOT NULL DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (uuid, currency_id)
-        )
-    """;
-
-        String createTransactionsTable = """
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            currency_id TEXT NOT NULL,
-            from_uuid TEXT,
-            to_uuid TEXT,
-            amount REAL NOT NULL,
-            fee REAL NOT NULL DEFAULT 0.0,
-            type TEXT NOT NULL,
-            description TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """;
-
-        String createRankingCacheTable = """
-        CREATE TABLE IF NOT EXISTS ranking_cache (
-            currency_id TEXT NOT NULL,
-            uuid TEXT NOT NULL,
-            username TEXT NOT NULL,
-            balance REAL NOT NULL,
-            position INTEGER NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (currency_id, uuid)
-        )
-    """;
-
-        String createPlayerSettingsTable = """
-        CREATE TABLE IF NOT EXISTS player_settings (
-            uuid TEXT PRIMARY KEY,
-            currency_id TEXT NOT NULL,
-            payment_enabled BOOLEAN NOT NULL DEFAULT 1,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """;
-
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(createAccountsTable);
-            stmt.execute(createTransactionsTable);
-            stmt.execute(createRankingCacheTable);
-            stmt.execute(createPlayerSettingsTable);
+    public boolean addBalance(UUID playerUuid, String currencyId, double amount) {
+        try {
+            psAddBalance.clearParameters();
+            psAddBalance.setDouble(1, amount);
+            psAddBalance.setString(2, playerUuid.toString());
+            psAddBalance.setString(3, currencyId);
+            return psAddBalance.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("addBalance error", e);
+            return false;
         }
-
-        // Garantir índices
-        createIndices();
     }
-    
-    public List<RankingEntry> getTopPlayers(String currencyId, int limit) {
-        String sql = """
-            SELECT uuid, username, balance, position 
-            FROM ranking_cache 
-            WHERE currency_id = ? 
-            ORDER BY position ASC 
-            LIMIT ?
-        """;
-        
-        List<RankingEntry> ranking = new ArrayList<>();
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, currencyId);
-            pstmt.setInt(2, limit);
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
+
+    public boolean subtractBalance(UUID playerUuid, String currencyId, double amount) {
+        try {
+            psSubBalanceNoCheck.clearParameters();
+            psSubBalanceNoCheck.setDouble(1, amount);
+            psSubBalanceNoCheck.setString(2, playerUuid.toString());
+            psSubBalanceNoCheck.setString(3, currencyId);
+            return psSubBalanceNoCheck.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("subtractBalance error", e);
+            return false;
+        }
+    }
+
+    public boolean resetPlayerBalance(UUID playerUuid, String currencyId, double defaultValue) {
+        try {
+            psResetBalance.clearParameters();
+            psResetBalance.setDouble(1, defaultValue);
+            psResetBalance.setString(2, playerUuid.toString());
+            psResetBalance.setString(3, currencyId);
+            return psResetBalance.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("resetPlayerBalance error", e);
+            return false;
+        }
+    }
+
+    // --------------- Payment toggles ----------------
+
+    public boolean isPaymentEnabled(UUID playerUuid, String currencyId) {
+        try {
+            psIsPaymentEnabled.clearParameters();
+            psIsPaymentEnabled.setString(1, playerUuid.toString());
+            psIsPaymentEnabled.setString(2, currencyId);
+            try (ResultSet rs = psIsPaymentEnabled.executeQuery()) {
+                if (rs.next()) return rs.getInt(1) != 0;
+            }
+        } catch (SQLException e) {
+            LOGGER.error("isPaymentEnabled error", e);
+        }
+        return true; // default permissive
+    }
+
+    public boolean setPaymentEnabled(UUID playerUuid, String currencyId, boolean enabled) {
+        try {
+            psSetPaymentEnabled.clearParameters();
+            psSetPaymentEnabled.setInt(1, enabled ? 1 : 0);
+            psSetPaymentEnabled.setString(2, playerUuid.toString());
+            psSetPaymentEnabled.setString(3, currencyId);
+            return psSetPaymentEnabled.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("setPaymentEnabled error", e);
+            return false;
+        }
+    }
+
+    // --------------- Transactions ----------------
+
+    public void recordTransaction(String currencyId, UUID sender, UUID receiver, double amount, double fee, String type, String description) {
+        try {
+            psRecordTransaction.clearParameters();
+            psRecordTransaction.setString(1, currencyId);
+            psRecordTransaction.setString(2, sender != null ? sender.toString() : null);
+            psRecordTransaction.setString(3, receiver != null ? receiver.toString() : null);
+            psRecordTransaction.setDouble(4, amount);
+            psRecordTransaction.setDouble(5, fee);
+            psRecordTransaction.setString(6, type);
+            psRecordTransaction.setString(7, description);
+            psRecordTransaction.executeUpdate();
+        } catch (SQLException e) {
+            LOGGER.error("recordTransaction error", e);
+        }
+    }
+
+    public List<Transaction> getPlayerTransactions(UUID playerUuid, String currencyId, int limit) {
+        List<Transaction> list = new ArrayList<>();
+        try {
+            psGetPlayerTransactions.clearParameters();
+            String uid = playerUuid.toString();
+            psGetPlayerTransactions.setString(1, uid);
+            psGetPlayerTransactions.setString(2, uid);
+            psGetPlayerTransactions.setString(3, currencyId);
+            psGetPlayerTransactions.setInt(4, Math.max(1, limit));
+            try (ResultSet rs = psGetPlayerTransactions.executeQuery()) {
                 while (rs.next()) {
-                    RankingEntry entry = new RankingEntry();
-                    entry.setUuid(rs.getString("uuid"));
-                    entry.setUsername(rs.getString("username"));
-                    entry.setBalance(rs.getDouble("balance"));
-                    entry.setPosition(rs.getInt("position"));
-                    ranking.add(entry);
+                    list.add(new Transaction(
+                            rs.getString(1),
+                            rs.getString(2),
+                            rs.getString(3),
+                            rs.getDouble(4),
+                            rs.getDouble(5),
+                            rs.getString(6),
+                            rs.getString(7),
+                            rs.getTimestamp(8)
+                    ));
                 }
             }
-            
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter ranking: ", e);
+            LOGGER.error("getPlayerTransactions error", e);
         }
-        
-        return ranking;
+        return list;
     }
-    
+
+    public Map<String, Double> getAllPlayerBalances(UUID playerUuid) {
+        Map<String, Double> out = new HashMap<>();
+        try {
+            psGetAllPlayerBalances.clearParameters();
+            psGetAllPlayerBalances.setString(1, playerUuid.toString());
+            try (ResultSet rs = psGetAllPlayerBalances.executeQuery()) {
+                while (rs.next()) {
+                    out.put(rs.getString(1), rs.getDouble(2));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getAllPlayerBalances error", e);
+        }
+        return out;
+    }
+
+    // --------------- Ranking ----------------
+
+    public List<RankingEntry> getTopPlayers(String currencyId, int limit) {
+        List<RankingEntry> list = new ArrayList<>();
+        try {
+            psGetTopPlayers.clearParameters();
+            psGetTopPlayers.setString(1, currencyId);
+            psGetTopPlayers.setInt(2, Math.max(1, limit));
+            try (ResultSet rs = psGetTopPlayers.executeQuery()) {
+                while (rs.next()) {
+                    list.add(new RankingEntry(
+                            rs.getString(1),
+                            rs.getString(2),
+                            rs.getDouble(3),
+                            rs.getInt(4)
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getTopPlayers error", e);
+        }
+        return list;
+    }
+
     public int getPlayerPosition(UUID playerUuid, String currencyId) {
-        String sql = "SELECT position FROM ranking_cache WHERE currency_id = ? AND uuid = ?";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, currencyId);
-            pstmt.setString(2, playerUuid.toString());
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getInt("position");
-                }
+        try {
+            psGetPlayerPosition.clearParameters();
+            psGetPlayerPosition.setString(1, currencyId);
+            psGetPlayerPosition.setString(2, playerUuid.toString());
+            try (ResultSet rs = psGetPlayerPosition.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
             }
-            
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter posição do jogador no ranking: ", e);
+            LOGGER.error("getPlayerPosition error", e);
         }
-        
-        return -1; // Not in ranking
+        return -1;
     }
-    
+
     public String getTopPlayerUuid(String currencyId) {
-        String sql = "SELECT uuid FROM ranking_cache WHERE currency_id = ? AND position = 1";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, currencyId);
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getString("uuid");
-                }
+        try {
+            psGetTopPlayerUuid.clearParameters();
+            psGetTopPlayerUuid.setString(1, currencyId);
+            try (ResultSet rs = psGetTopPlayerUuid.executeQuery()) {
+                if (rs.next()) return rs.getString(1);
             }
-            
         } catch (SQLException e) {
-            LOGGER.error("Erro ao obter top 1 do ranking: ", e);
+            LOGGER.error("getTopPlayerUuid error", e);
         }
-        
         return null;
     }
-    
-    // Utility methods
-    public boolean resetPlayerBalance(UUID playerUuid, String currencyId, double defaultBalance) {
-        return setBalance(playerUuid, currencyId, defaultBalance);
-    }
-    
-    public Map<String, Double> getAllPlayerBalances(UUID playerUuid) {
-        String sql = "SELECT currency_id, balance FROM accounts WHERE uuid = ?";
-        Map<String, Double> balances = new HashMap<>();
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerUuid.toString());
-            
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    balances.put(rs.getString("currency_id"), rs.getDouble("balance"));
-                }
-            }
-            
-        } catch (SQLException e) {
-            LOGGER.error("Erro ao obter todos os saldos do jogador: ", e);
-        }
-        
-        return balances;
-    }
-    
-    public void close() {
+
+    public void updateRankingCache(String currencyId) {
         try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-                LOGGER.info("Conexão com banco de dados fechada.");
+            conn.setAutoCommit(false);
+            try {
+                psDeleteRankingCache.clearParameters();
+                psDeleteRankingCache.setString(1, currencyId);
+                psDeleteRankingCache.executeUpdate();
+
+                psInsertRankingCache.clearParameters();
+                psInsertRankingCache.setString(1, currencyId);
+                psInsertRankingCache.setString(2, currencyId);
+                psInsertRankingCache.executeUpdate();
+
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
             }
         } catch (SQLException e) {
-            LOGGER.error("Erro ao fechar conexão com banco de dados: ", e);
+            LOGGER.error("updateRankingCache error", e);
         }
     }
-    
-    // Inner classes for data transfer
-    public static class Transaction {
-        private long id;
-        private String currencyId;
-        private String fromUuid;
-        private String toUuid;
-        private double amount;
-        private double fee;
-        private String type;
-        private String description;
-        private Timestamp timestamp;
-        
-        // Getters and setters
-        public long getId() { return id; }
-        public void setId(long id) { this.id = id; }
-        
-        public String getCurrencyId() { return currencyId; }
-        public void setCurrencyId(String currencyId) { this.currencyId = currencyId; }
-        
-        public String getFromUuid() { return fromUuid; }
-        public void setFromUuid(String fromUuid) { this.fromUuid = fromUuid; }
-        
-        public String getToUuid() { return toUuid; }
-        public void setToUuid(String toUuid) { this.toUuid = toUuid; }
-        
-        public double getAmount() { return amount; }
-        public void setAmount(double amount) { this.amount = amount; }
-        
-        public double getFee() { return fee; }
-        public void setFee(double fee) { this.fee = fee; }
-        
-        public String getType() { return type; }
-        public void setType(String type) { this.type = type; }
-        
-        public String getDescription() { return description; }
-        public void setDescription(String description) { this.description = description; }
-        
-        public Timestamp getTimestamp() { return timestamp; }
-        public void setTimestamp(Timestamp timestamp) { this.timestamp = timestamp; }
+
+    // --------------- Retenção e manutenção ----------------
+
+    /**
+     * Apaga transactions mais antigas que retentionDays.
+     * @return número de linhas apagadas
+     */
+    public int pruneOldTransactions(double retentionDays) {
+        try {
+            psDeleteOldTransactionsDays.clearParameters();
+            psDeleteOldTransactionsDays.setDouble(1, Math.max(0.0, retentionDays));
+            int rows = psDeleteOldTransactionsDays.executeUpdate();
+            LOGGER.debug("Transactions pruning: {} rows older than {} days removed", rows, retentionDays);
+            return rows;
+        } catch (SQLException e) {
+            LOGGER.error("pruneOldTransactions error", e);
+            return 0;
+        }
     }
-    
-    public static class RankingEntry {
-        private String uuid;
-        private String username;
-        private double balance;
-        private int position;
-        
-        // Getters and setters
-        public String getUuid() { return uuid; }
-        public void setUuid(String uuid) { this.uuid = uuid; }
-        
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        
-        public double getBalance() { return balance; }
-        public void setBalance(double balance) { this.balance = balance; }
-        
-        public int getPosition() { return position; }
-        public void setPosition(int position) { this.position = position; }
+
+    /**
+     * Executa PRAGMA wal_checkpoint(TRUNCATE) para compactar o arquivo WAL.
+     */
+    public boolean walCheckpointTruncate() {
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA wal_checkpoint(TRUNCATE)")) {
+            LOGGER.debug("WAL checkpoint (TRUNCATE) executed");
+            return true;
+        } catch (SQLException e) {
+            LOGGER.error("walCheckpointTruncate error", e);
+            return false;
+        }
+    }
+
+    /**
+     * Executa ANALYZE.
+     */
+    public boolean analyze() {
+        try (Statement st = conn.createStatement()) {
+            st.execute("ANALYZE");
+            LOGGER.debug("ANALYZE executed");
+            return true;
+        } catch (SQLException e) {
+            LOGGER.error("ANALYZE error", e);
+            return false;
+        }
+    }
+
+    /**
+     * Executa VACUUM (fora de transação).
+     */
+    public boolean vacuum() {
+        try {
+            conn.setAutoCommit(true); // garantir fora de transação
+            try (Statement st = conn.createStatement()) {
+                st.execute("VACUUM");
+                LOGGER.debug("VACUUM executed");
+                return true;
+            }
+        } catch (SQLException e) {
+            LOGGER.error("VACUUM error", e);
+            return false;
+        }
+    }
+
+    // --------------- Atomic pay ----------------
+
+    /**
+     * Atomic pay within a single DB transaction.
+     * amount: amount to transfer to receiver; fee: extra amount to be debited from sender (not credited to receiver).
+     */
+    public PayTxResult payAtomic(UUID senderUuid, UUID receiverUuid, String currencyId, double amount, double fee) {
+        try {
+            conn.setAutoCommit(false);
+            try {
+                // Check receiver accepts payments
+                if (!isPaymentEnabled(receiverUuid, currencyId)) {
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.RECEIVER_BLOCKED);
+                }
+
+                // Ensure both accounts exist
+                if (!hasAccount(senderUuid, currencyId)) {
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.SENDER_NOT_FOUND);
+                }
+                if (!hasAccount(receiverUuid, currencyId)) {
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.RECEIVER_NOT_FOUND);
+                }
+
+                double totalDebit = amount + Math.max(0.0, fee);
+                // Check sender balance
+                double senderBal = getBalance(senderUuid, currencyId);
+                if (senderBal < totalDebit) {
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.INSUFFICIENT_FUNDS);
+                }
+
+                // Perform updates
+                if (!subtractBalance(senderUuid, currencyId, totalDebit)) {
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.INSUFFICIENT_FUNDS);
+                }
+                if (!addBalance(receiverUuid, currencyId, amount)) {
+                    // try rollback of debit (best effort)
+                    addBalance(senderUuid, currencyId, totalDebit);
+                    conn.rollback();
+                    conn.setAutoCommit(true);
+                    return new PayTxResult(PayTxResult.Status.ERROR);
+                }
+
+                // Record transaction
+                recordTransaction(currencyId, senderUuid, receiverUuid, amount, fee, "PAY", "Player payment");
+
+                conn.commit();
+                conn.setAutoCommit(true);
+                return new PayTxResult(PayTxResult.Status.OK);
+            } catch (SQLException ex) {
+                try { conn.rollback(); } catch (SQLException ignore) {}
+                LOGGER.error("payAtomic SQL error", ex);
+                return new PayTxResult(PayTxResult.Status.ERROR);
+            } finally {
+                try { conn.setAutoCommit(true); } catch (SQLException ignore) {}
+            }
+        } catch (SQLException e) {
+            LOGGER.error("payAtomic (autocommit) error", e);
+            return new PayTxResult(PayTxResult.Status.ERROR);
+        }
+    }
+
+    // --------------- Shutdown ----------------
+
+    public void close() {
+        // Close prepared statements
+        List<AutoCloseable> closables = Arrays.asList(
+                psHasAccount, psCreateAccount, psGetBalance, psSetBalance, psAddBalance,
+                psSubBalanceNoCheck, psResetBalance, psIsPaymentEnabled, psSetPaymentEnabled,
+                psRecordTransaction, psGetPlayerTransactions, psGetAllPlayerBalances,
+                psGetTopPlayers, psGetPlayerPosition, psGetTopPlayerUuid,
+                psDeleteRankingCache, psInsertRankingCache, psDeleteOldTransactionsDays
+        );
+        for (AutoCloseable c : closables) {
+            if (c != null) {
+                try { c.close(); } catch (Exception e) { /* ignore */ }
+            }
+        }
+        try { conn.close(); } catch (SQLException e) { LOGGER.warn("Error closing connection", e); }
     }
 }
-

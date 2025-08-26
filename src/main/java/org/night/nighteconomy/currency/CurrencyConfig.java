@@ -75,9 +75,17 @@ public class CurrencyConfig {
 
     // Inner classes for nested configurations
     public static class FormatConfig {
-        private String format;
+        // Legado: antes era um template como "&a{amount}"
+        // Agora usaremos:
+        // - centsEnabled: true/false para exibir centavos
+        // - decimalSeparator: separador decimal quando centsEnabled=true
+        private String format; // mantido para compatibilidade (não usado no novo esquema)
         private SeparatorConfig separator;
         private MultiplesConfig multiples;
+
+        // Novos campos (não quebram compat)
+        private Boolean centsEnabled;     // novo: controla exibição de centavos
+        private String decimalSeparator;  // novo: separador decimal (",", ".")
 
         public String getFormat() { return format; }
         public void setFormat(String format) { this.format = format; }
@@ -87,6 +95,13 @@ public class CurrencyConfig {
 
         public MultiplesConfig getMultiples() { return multiples; }
         public void setMultiples(MultiplesConfig multiples) { this.multiples = multiples; }
+
+        // Novos getters/setters
+        public Boolean getCentsEnabled() { return centsEnabled; }
+        public void setCentsEnabled(Boolean centsEnabled) { this.centsEnabled = centsEnabled; }
+
+        public String getDecimalSeparator() { return decimalSeparator; }
+        public void setDecimalSeparator(String decimalSeparator) { this.decimalSeparator = decimalSeparator; }
     }
 
     public static class SeparatorConfig {
@@ -253,19 +268,22 @@ public class CurrencyConfig {
     public static CurrencyConfig createDefault(String id, String name) {
         CurrencyConfig c = new CurrencyConfig(id, name, 100.0);
 
-        // Format
+        // Format (NOVO ESQUEMA): format=true, separator=","
         FormatConfig fmt = new FormatConfig();
-        fmt.setFormat("&a$amount");
+        fmt.setCentsEnabled(true);
+        fmt.setDecimalSeparator(",");
+        // Preenche legados para compat (separator antigo e sem múltiplos)
         SeparatorConfig sep = new SeparatorConfig();
         sep.setDecimal(",");
-        sep.setGroup(".");
-        sep.setSingle(" ");
+        sep.setGroup("");   // sem milhar no novo esquema
+        sep.setSingle("");  // sem separador sufixo
         fmt.setSeparator(sep);
         MultiplesConfig mul = new MultiplesConfig();
-        mul.setEnabled(true);
-        mul.setStart(1000);
-        mul.setMultiples(java.util.List.of("K", "M", "B", "T"));
+        mul.setEnabled(false);
+        mul.setStart(0);
+        mul.setMultiples(java.util.List.of());
         fmt.setMultiples(mul);
+        // format (string) legado não é usado; manter null
         c.setFormat(fmt);
 
         // Payment
@@ -347,29 +365,73 @@ public class CurrencyConfig {
         c.setUpdate(cfg.getOrElse("update", 300));
         c.setMagnata(cfg.getOrElse("magnata", "&a[$]"));
 
-        // format
+        // format (suporta esquema antigo e novo)
         if (cfg.contains("format")) {
             UnmodifiableConfig f = cfg.get("format");
             FormatConfig fmt = new FormatConfig();
-            fmt.setFormat(f.getOrElse("format", "&a$amount"));
 
+            // "format" pode ser boolean (novo) ou string (legado)
+            Object fval = f.get("format");
+            if (fval instanceof Boolean b) {
+                fmt.setCentsEnabled(b);
+                // manter string legacy coerente (não usada), apenas para evitar NPEs
+                fmt.setFormat(null);
+            } else if (fval instanceof String s) {
+                // legado: template
+                fmt.setFormat(s);
+                // se vier "true"/"false" como string, interpreta também
+                if ("true".equalsIgnoreCase(s) || "false".equalsIgnoreCase(s)) {
+                    fmt.setCentsEnabled(Boolean.parseBoolean(s));
+                }
+            } else {
+                // default
+                fmt.setCentsEnabled(true);
+                fmt.setFormat(null);
+            }
+
+            // "separator" pode ser string (novo) ou objeto com decimal/group/single (legado)
             if (f.contains("separator")) {
-                UnmodifiableConfig s = f.get("separator");
+                Object sepNode = f.get("separator");
+                if (sepNode instanceof String ds) {
+                    fmt.setDecimalSeparator(ds != null && !ds.isEmpty() ? ds : ",");
+                    SeparatorConfig sep = new SeparatorConfig();
+                    sep.setDecimal(fmt.getDecimalSeparator());
+                    sep.setGroup("");
+                    sep.setSingle("");
+                    fmt.setSeparator(sep);
+                } else if (sepNode instanceof UnmodifiableConfig s) {
+                    SeparatorConfig sep = new SeparatorConfig();
+                    String dec = s.getOrElse("decimal", ",");
+                    sep.setDecimal(dec);
+                    sep.setGroup(s.getOrElse("group", ""));
+                    sep.setSingle(s.getOrElse("single", ""));
+                    fmt.setSeparator(sep);
+                    fmt.setDecimalSeparator(dec);
+                }
+            } else {
+                // padrão
+                fmt.setDecimalSeparator(",");
                 SeparatorConfig sep = new SeparatorConfig();
-                sep.setDecimal(s.getOrElse("decimal", ","));
-                sep.setGroup(s.getOrElse("group", "."));
-                sep.setSingle(s.getOrElse("single", " "));
+                sep.setDecimal(",");
+                sep.setGroup("");
+                sep.setSingle("");
                 fmt.setSeparator(sep);
             }
 
+            // Múltiplos (legado). No novo esquema, desativado.
             if (f.contains("multiples")) {
                 UnmodifiableConfig m = f.get("multiples");
                 MultiplesConfig mul = new MultiplesConfig();
-                mul.setEnabled(m.getOrElse("enabled", true));
-                mul.setStart(m.getOrElse("start", 1000));
+                mul.setEnabled(m.getOrElse("enabled", false));
+                mul.setStart(m.getOrElse("start", 0));
                 List<String> list = m.get("multiples");
-                if (list == null) list = List.of("K", "M", "B", "T");
-                mul.setMultiples(list);
+                mul.setMultiples(list != null ? list : List.of());
+                fmt.setMultiples(mul);
+            } else {
+                MultiplesConfig mul = new MultiplesConfig();
+                mul.setEnabled(false);
+                mul.setStart(0);
+                mul.setMultiples(List.of());
                 fmt.setMultiples(mul);
             }
 
@@ -434,7 +496,7 @@ public class CurrencyConfig {
                         types.setPaySend(ty.getOrElse("paySend", "PAY_SEND"));
                         types.setPayReceive(ty.getOrElse("payReceive", "PAY_RECEIVE"));
                         types.setExternalAdd(ty.getOrElse("externalAdd", "EXTERNAL_ADD"));
-                        types.setExternalRemove(ty.getOrElse("externalRemove", "EXTERNAL_REMOVE"));
+                        types.setExternalRemove(ty.getOrElse("externalRemove", "externalRemove"));
                         tcfg.setTypes(types);
                     }
                     subs.setTransactions(tcfg);
@@ -516,44 +578,23 @@ public class CurrencyConfig {
             root.set("magnata", getMagnata());
             root.setComment("magnata", "Texto/ícone do 'magnata' (top 1). Suporta cores usando &.");
 
-            // Format section
+            // Format section - NOVO ESQUEMA (apenas 'format' boolean + 'separator' string)
             if (getFormat() != null) {
                 CommentedConfig f = CommentedConfig.inMemory();
                 root.set("format", f);
                 root.setComment("format", "Formatação de exibição dos valores desta moeda.");
 
-                f.set("format", getFormat().getFormat());
-                f.setComment("format", "Modelo do valor. Use {amount} para o número formatado. Ex.: \"&a{amount}\".");
+                boolean cents = getFormat().getCentsEnabled() != null ? getFormat().getCentsEnabled() : true;
+                String sep = getFormat().getDecimalSeparator() != null && !getFormat().getDecimalSeparator().isEmpty()
+                        ? getFormat().getDecimalSeparator() : ",";
 
-                if (getFormat().getSeparator() != null) {
-                    CommentedConfig s = CommentedConfig.inMemory();
-                    f.set("separator", s);
-                    f.setComment("separator", "Separadores numéricos.");
+                f.set("format", cents);
+                f.setComment("format",
+                        "Modelo do valor. deixe em \"true\" para exibir o centavos da moeda, ou \"false\" para nao exibir.\n" +
+                                "Exemplo do true: Seu money: 1000,0 ; exemplo do false: Seu money: 1000");
 
-                    s.set("decimal", getFormat().getSeparator().getDecimal());
-                    s.setComment("decimal", "Separador decimal (ex.: , ou .).");
-
-                    s.set("group", getFormat().getSeparator().getGroup());
-                    s.setComment("group", "Separador de milhar (ex.: . ou ,).");
-
-                    s.set("single", getFormat().getSeparator().getSingle());
-                    s.setComment("single", "Separador entre valor e sufixo (ex.: espaço).");
-                }
-
-                if (getFormat().getMultiples() != null) {
-                    CommentedConfig m = CommentedConfig.inMemory();
-                    f.set("multiples", m);
-                    f.setComment("multiples", "Abreviações para grandes valores.");
-
-                    m.set("enabled", getFormat().getMultiples().isEnabled());
-                    m.setComment("enabled", "Ativa (true) ou desativa (false) a abreviação (K, M, B, T...).");
-
-                    m.set("start", getFormat().getMultiples().getStart());
-                    m.setComment("start", "Valor mínimo para aplicar abreviação (ex.: 1000).");
-
-                    m.set("multiples", getFormat().getMultiples().getMultiples());
-                    m.setComment("multiples", "Lista de sufixos em ordem (ex.: [\"K\",\"M\",\"B\",\"T\"]).");
-                }
+                f.set("separator", sep);
+                f.setComment("separator", "Se format estiver ligado, o \"separator\" vai indicar como será separado os centavos");
             }
 
             // Payment section
