@@ -8,9 +8,9 @@ import java.util.UUID;
  * Permite que outros mods sejam notificados sobre mudanças no sistema de economia,
  * como transações, mudanças de saldo, alterações de ranking, etc.
  * 
- * @author NightEconomy Team
- * @version 2.0.0
- * @since 2.0.0
+ * @author Night
+ * @version 3.1.0
+ * @since 3.1.0
  */
 public interface EconomyEventListener {
     

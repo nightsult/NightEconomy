@@ -28,7 +28,7 @@ import java.nio.file.Paths;
 @Mod(org.night.nighteconomy.Nighteconomy.MODID)
 public class Nighteconomy {
     public static final String MODID = "nighteconomy";
-    public static final String VERSION = "3.0.0";
+    public static final String VERSION = "3.1.0";
     private static final Logger LOGGER = LogManager.getLogger();
 
     private ConfigManager configManager;

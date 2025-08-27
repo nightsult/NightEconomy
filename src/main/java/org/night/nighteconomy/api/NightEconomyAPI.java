@@ -17,8 +17,8 @@ import java.util.UUID;
  * permitindo que outros mods interajam com contas, transações, rankings e configurações.
  * 
  * @author NightEconomy
- * @version 2.0.0
- * @since 1.0.0
+ * @version 3.1.0
+ * @since 3.1.0
  */
 public interface NightEconomyAPI {
     

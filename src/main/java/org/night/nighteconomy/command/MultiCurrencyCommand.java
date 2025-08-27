@@ -415,8 +415,23 @@ public class MultiCurrencyCommand {
 
         if (success) {
             String messageKey = newSetting ? "payment-toggle-enabled" : "payment-toggle-disabled";
-            String message = configManager.getGlobalMessage(messageKey);
-            context.getSource().sendSuccess(() -> Component.literal(translateColors(message)), false);
+
+            CurrencyConfig cfg = configManager.getCurrency(currencyId);
+
+            // Ordem: mensagem da moeda -> global -> default
+            String message = getMessageFromConfig(cfg, messageKey, null);
+            if (message == null || message.isBlank() || message.startsWith("Message not found")) {
+                message = configManager.getGlobalMessage(messageKey);
+            }
+            if (message == null || message.isBlank() || message.startsWith("Message not found")) {
+                message = newSetting
+                        ? "&aYou enabled receiving payments."
+                        : "&cYou disabled receiving payments.";
+            }
+
+            // Torna efetivamente final para uso na lambda
+            final String finalMessage = translateColors(message);
+            context.getSource().sendSuccess(() -> Component.literal(finalMessage), false);
         } else {
             context.getSource().sendFailure(Component.literal(translateColors("&cErro ao alterar configuração de pagamentos!")));
         }
@@ -496,8 +511,17 @@ public class MultiCurrencyCommand {
         switch (errorKey) {
             case "Saldo insuficiente":
                 return getMessageFromConfig(config, "insufficient-funds", "&cVocê não tem saldo suficiente!");
-            case "Jogador não aceita pagamentos":
-                return configManager.getGlobalMessage("payment-disabled").replace("{player}", "o jogador");
+            case "Jogador não aceita pagamentos": {
+                // Primeiro tenta mensagem da moeda, depois global, por fim um default
+                String m = getMessageFromConfig(config, "payment-disabled", null);
+                if (m == null || m.isBlank() || m.startsWith("Message not found")) {
+                    m = configManager.getGlobalMessage("payment-disabled");
+                }
+                if (m == null || m.isBlank() || m.startsWith("Message not found")) {
+                    m = "&cThis player is not accepting payments.";
+                }
+                return m.replace("{player}", "o jogador");
+            }
             case "Quantia inválida":
                 return getMessageFromConfig(config, "invalid-amount", "&cQuantia inválida!");
             default:

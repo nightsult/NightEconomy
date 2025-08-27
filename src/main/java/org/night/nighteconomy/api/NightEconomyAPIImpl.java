@@ -21,8 +21,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * para outros mods que desejam integrar com o NightEconomy.
  *
  * @author NightEconomy Team
- * @version 2.0.0
- * @since 1.0.0
+ * @version 3.1.0
+ * @since 3.1.0
  */
 public class NightEconomyAPIImpl implements NightEconomyAPI {
     private static final Logger LOGGER = LogManager.getLogger();
