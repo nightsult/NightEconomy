@@ -4,6 +4,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.night.nighteconomy.api.NightEconomyAPI;
 import org.night.nighteconomy.api.NightEconomyAPIImpl;
+import org.night.nighteconomy.api.NightEconomyAPIProvider;
+import org.night.nighteconomy.api.event.NightEconomyReadyEvent;
 import org.night.nighteconomy.command.MultiCurrencyCommand;
 import org.night.nighteconomy.config.ConfigManager;
 import org.night.nighteconomy.database.MultiCurrencyDatabaseManager;
@@ -41,6 +43,9 @@ public class Nighteconomy {
 
     private static org.night.nighteconomy.Nighteconomy instance;
 
+    // Controla publicação única do evento de API pronta
+    private boolean apiPublished = false;
+
     public Nighteconomy(IEventBus modEventBus, ModContainer modContainer) {
         instance = this;
 
@@ -72,6 +77,12 @@ public class Nighteconomy {
 
             apiImpl = new NightEconomyAPIImpl(economyService, configManager, placeholderManager, rankingManager);
 
+            // Disponibiliza a API para outros mods o quanto antes
+            if (!NightEconomyAPIProvider.isReady()) {
+                NightEconomyAPIProvider.set(apiImpl);
+                LOGGER.info("NightEconomy API instance set in provider (version {}).", apiImpl.getAPIVersion());
+            }
+
             LOGGER.info("NightEconomy v{} successfully configured!", VERSION);
         } catch (Exception e) {
             LOGGER.error("Failed to configure NightEconomy: ", e);
@@ -97,6 +108,17 @@ public class Nighteconomy {
             if (rankingManager != null) {
                 rankingManager.forceUpdateAll();
                 LOGGER.info("Rankings successfully initialized!");
+            }
+
+            // Publica evento avisando que a API está pronta (uma única vez)
+            if (!apiPublished && apiImpl != null) {
+                // Certifica que o provider tem a instância
+                if (!NightEconomyAPIProvider.isReady()) {
+                    NightEconomyAPIProvider.set(apiImpl);
+                }
+                NeoForge.EVENT_BUS.post(new NightEconomyReadyEvent(apiImpl));
+                apiPublished = true;
+                LOGGER.info("NightEconomyReadyEvent posted. API is ready for external mods.");
             }
 
             LOGGER.info("NightEconomy v{} successfully uploaded to the server!", VERSION);
