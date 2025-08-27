@@ -3,9 +3,6 @@ package org.night.nighteconomy.placeholder;
 import org.night.nighteconomy.config.ConfigManager;
 import org.night.nighteconomy.currency.CurrencyConfig;
 import org.night.nighteconomy.service.MultiCurrencyEconomyService;
-import net.luckperms.api.LuckPerms;
-import net.luckperms.api.LuckPermsProvider;
-import net.luckperms.api.model.user.User;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -20,44 +17,24 @@ public class PlaceholderManager {
 
     private final MultiCurrencyEconomyService economyService;
     private final ConfigManager configManager;
-    private LuckPerms luckPerms;
 
-    private static final Pattern CURRENCY_PLACEHOLDER_PATTERN = Pattern.compile("nighteconomy_([a-zA-Z0-9_]+)_([a-zA-Z0-9_]+)");
+    private static final Pattern CURRENCY_PLACEHOLDER_PATTERN =
+            Pattern.compile("nighteconomy_([a-zA-Z0-9_]+)_([a-zA-Z0-9_]+)");
 
     public PlaceholderManager(MultiCurrencyEconomyService economyService, ConfigManager configManager) {
         this.economyService = economyService;
         this.configManager = configManager;
-
-        try {
-            this.luckPerms = LuckPermsProvider.get();
-            LOGGER.info("LuckPerms API integrada com sucesso!");
-        } catch (IllegalStateException e) {
-            LOGGER.warn("LuckPerms não encontrado. Placeholders funcionarão sem integração com LuckPerms.");
-            this.luckPerms = null;
-        }
     }
 
+    // No-op; mantido para compatibilidade caso seja chamado em algum lugar
     public void registerPlaceholders() {
-        if (luckPerms == null) {
-            LOGGER.warn("Não é possível registrar placeholders: LuckPerms não disponível");
-            return;
-        }
-
-        try {
-            // Register placeholder expansion with LuckPerms
-            // Note: This is a conceptual implementation as LuckPerms doesn't have a direct placeholder registration API
-            // In practice, placeholders would be handled through PlaceholderAPI or similar
-            LOGGER.info("Placeholders registrados com LuckPerms");
-        } catch (Exception e) {
-            LOGGER.error("Error registering placeholders: ", e);
-        }
+        // Sem integração externa necessária.
     }
 
     public String processPlaceholder(UUID playerUuid, String placeholder) {
         if (placeholder == null || placeholder.isEmpty()) {
             return placeholder;
         }
-
         if (!placeholder.startsWith("nighteconomy_")) {
             return placeholder;
         }
@@ -191,36 +168,6 @@ public class PlaceholderManager {
         return result;
     }
 
-    public User getLuckPermsUser(UUID playerUuid) {
-        if (luckPerms == null) {
-            return null;
-        }
-
-        try {
-            return luckPerms.getUserManager().getUser(playerUuid);
-        } catch (Exception e) {
-            LOGGER.error("Error getting LuckPerms user: ", e);
-            return null;
-        }
-    }
-
-    public boolean hasPermission(UUID playerUuid, String permission) {
-        if (luckPerms == null) {
-            return false;
-        }
-
-        try {
-            User user = luckPerms.getUserManager().getUser(playerUuid);
-            if (user != null) {
-                return user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
-            }
-        } catch (Exception e) {
-            LOGGER.error("Error checking permission: ", e);
-        }
-
-        return false;
-    }
-
     public Map<String, String> getAllPlaceholders(UUID playerUuid) {
         Map<String, String> placeholders = new HashMap<>();
 
@@ -244,21 +191,28 @@ public class PlaceholderManager {
 
     public String[] getAvailablePlaceholders() {
         return new String[]{
-            "nighteconomy_<currency>_prefix",
-            "nighteconomy_<currency>_id",
-            "nighteconomy_<currency>_balance",
-            "nighteconomy_<currency>_balance_raw",
-            "nighteconomy_<currency>_position",
-            "nighteconomy_<currency>_magnata",
-            "nighteconomy_<currency>_top1_name",
-            "nighteconomy_<currency>_top1_balance",
-            "nighteconomy_<currency>_ranking_enabled",
-            "nighteconomy_<currency>_payment_enabled"
+                "nighteconomy_<currency>_prefix",
+                "nighteconomy_<currency>_id",
+                "nighteconomy_<currency>_balance",
+                "nighteconomy_<currency>_balance_raw",
+                "nighteconomy_<currency>_position",
+                "nighteconomy_<currency>_magnata",
+                "nighteconomy_<currency>_top1_name",
+                "nighteconomy_<currency>_top1_balance",
+                "nighteconomy_<currency>_ranking_enabled",
+                "nighteconomy_<currency>_payment_enabled"
         };
     }
 
+    // Mantém compatibilidade com NightEconomyAPIImpl, sem dependência de LP
     public boolean isLuckPermsAvailable() {
-        return luckPerms != null;
+        try {
+            Class<?> provider = Class.forName("net.luckperms.api.LuckPermsProvider");
+            java.lang.reflect.Method get = provider.getMethod("get");
+            Object api = get.invoke(null);
+            return api != null;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }
-

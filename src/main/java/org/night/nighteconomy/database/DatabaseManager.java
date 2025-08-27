@@ -18,12 +18,12 @@ public class DatabaseManager {
 
     private void initializeDatabase() {
         try {
-            File dbDir = new File("config/economymod");
+            File dbDir = new File("config/economymod/database");
             if (!dbDir.exists()) {
                 dbDir.mkdirs();
             }
 
-            String url = "jdbc:sqlite:config/economymod/" + DATABASE_NAME;
+            String url = "jdbc:sqlite:config/economymod/database/" + DATABASE_NAME;
             connection = DriverManager.getConnection(url);
 
             createTables();

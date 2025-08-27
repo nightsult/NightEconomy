@@ -16,7 +16,6 @@ public class CurrencyConfig {
     private double defaultValue;
     private boolean ranking;
     private int update;
-    private String magnata;
 
     private FormatConfig format;
 
@@ -26,6 +25,10 @@ public class CurrencyConfig {
 
     private Map<String, String> messages;
 
+    // Tycoon (substitui "magnata")
+    private String tycoon;              // ex: "&a[$]"
+    private String tycoonBroadcast;     // ex: "\n&aPlayer &e%player% &ais the new server tycoon!\n"
+
     public CurrencyConfig() {}
 
     public CurrencyConfig(String id, String name, double defaultValue) {
@@ -34,7 +37,8 @@ public class CurrencyConfig {
         this.defaultValue = defaultValue;
         this.ranking = true;
         this.update = 300;
-        this.magnata = "&a[$]";
+        this.tycoon = "&a[$]";
+        this.tycoonBroadcast = "\n&aPlayer &e%player% &ais the new server tycoon!\n";
     }
 
     public String getId() { return id; }
@@ -52,8 +56,11 @@ public class CurrencyConfig {
     public int getUpdate() { return update; }
     public void setUpdate(int update) { this.update = update; }
 
-    public String getMagnata() { return magnata; }
-    public void setMagnata(String magnata) { this.magnata = magnata; }
+    public String getTycoon() { return tycoon; }
+    public void setTycoon(String tycoon) { this.tycoon = tycoon; }
+
+    public String getTycoonBroadcast() { return tycoonBroadcast; }
+    public void setTycoonBroadcast(String tycoonBroadcast) { this.tycoonBroadcast = tycoonBroadcast; }
 
     public FormatConfig getFormat() { return format; }
     public void setFormat(FormatConfig format) { this.format = format; }
@@ -254,6 +261,10 @@ public class CurrencyConfig {
     public static CurrencyConfig createDefault(String id, String name) {
         CurrencyConfig c = new CurrencyConfig(id, name, 100.0);
 
+        // Tycoon defaults
+        c.setTycoon("&a[$]");
+        c.setTycoonBroadcast("\n&aPlayer &e%player% &ais the new server tycoon!\n");
+
         FormatConfig fmt = new FormatConfig();
         fmt.setCentsEnabled(true);
         fmt.setDecimalSeparator(",");
@@ -282,7 +293,6 @@ public class CurrencyConfig {
 
         java.util.function.Function<String, SubcommandConfig> mk = (perm) -> {
             SubcommandConfig sc = new SubcommandConfig();
-            sc.setAliases(java.util.List.of());
             sc.setPermission(perm);
             sc.setPermissions(java.util.List.of());
             return sc;
@@ -299,7 +309,6 @@ public class CurrencyConfig {
         subs.setTogglePayment(mk.apply("nighteconomy." + id + ".toggle"));
 
         TransactionsConfig tx = new TransactionsConfig();
-        tx.setAliases(java.util.List.of());
         tx.setPermission("nighteconomy." + id + ".transactions");
         tx.setPermissions(java.util.List.of("nighteconomy." + id + ".transactions.other"));
 
@@ -326,6 +335,9 @@ public class CurrencyConfig {
         msgs.put("pay-received", "&aYou received &f{amount} &afrom &f{player}!");
         msgs.put("insufficient-funds", "&cYou do not have enough balance!");
         msgs.put("invalid-amount", "&cInvalid amount!");
+        // Novas mensagens para /<cmd> toggle
+        msgs.put("payment-toggle-enabled", "&aYou enabled receiving payments.");
+        msgs.put("payment-toggle-disabled", "&cYou disabled receiving payments.");
         c.setMessages(msgs);
 
         return c;
@@ -343,7 +355,10 @@ public class CurrencyConfig {
         CurrencyConfig c = new CurrencyConfig(id, name, def);
         c.setRanking(cfg.getOrElse("ranking", true));
         c.setUpdate(cfg.getOrElse("update", 300));
-        c.setMagnata(cfg.getOrElse("magnata", "&a[$]"));
+
+        // Tycoon (novo)
+        c.setTycoon(cfg.getOrElse("tycoon", "&a[$]"));
+        c.setTycoonBroadcast(cfg.getOrElse("tycoonBroadcast", "\n&aPlayer &e%player% &ais the new server tycoon!\n"));
 
         if (cfg.contains("format")) {
             UnmodifiableConfig f = cfg.get("format");
@@ -431,7 +446,6 @@ public class CurrencyConfig {
                     if (!sc.contains(key)) return null;
                     UnmodifiableConfig sub = sc.get(key);
                     SubcommandConfig out = new SubcommandConfig();
-                    out.setAliases(sub.getOrElse("aliases", List.of()));
                     out.setPermission(sub.getOrElse("permission", ""));
                     out.setPermissions(sub.getOrElse("permissions", List.of()));
                     return out;
@@ -499,6 +513,7 @@ public class CurrencyConfig {
                         if (received != null) msgs.put("pay-received", received);
                     }
                 }
+                // Qualquer outra estrutura aninhada vira chave com "-" (ex.: payment.toggle.enabled -> payment-toggle-enabled)
                 flattenMessages("", uc, msgs);
             } else if (messagesObj instanceof Map<?, ?> raw) {
                 for (Map.Entry<?, ?> e : raw.entrySet()) {
@@ -510,6 +525,9 @@ public class CurrencyConfig {
                 }
             }
         }
+        // Garantir defaults essenciais se faltarem
+        msgs.putIfAbsent("payment-toggle-enabled", "&aYou enabled receiving payments.");
+        msgs.putIfAbsent("payment-toggle-disabled", "&cYou disabled receiving payments.");
         c.setMessages(msgs);
 
         return c;
@@ -539,8 +557,14 @@ public class CurrencyConfig {
             root.set("update", getUpdate());
             root.setComment("update", "Interval (seconds) to refresh the ranking cache when ranking=true.");
 
-            root.set("magnata", getMagnata());
-            root.setComment("magnata", "'Tycoon' text/icon (top 1). Supports colors using &.");
+            // Tycoon (novo)
+            root.set("tycoon", getTycoon());
+            root.setComment("tycoon", "'Tycoon' text/icon (top 1). Supports colors using &.");
+
+            if (getTycoonBroadcast() != null && !getTycoonBroadcast().isEmpty()) {
+                root.set("tycoonBroadcast", getTycoonBroadcast());
+                root.setComment("tycoonBroadcast", "Broadcast shown when a new tycoon is detected. Placeholder: %player%");
+            }
 
             if (getFormat() != null) {
                 CommentedConfig f = CommentedConfig.inMemory();
@@ -606,10 +630,6 @@ public class CurrencyConfig {
                             default -> "Subcomand " + key;
                         });
 
-                        if (sub.getAliases() != null) {
-                            s.set("aliases", sub.getAliases());
-                            s.setComment("aliases", "Additional aliases for this subcommand.");
-                        }
                         if (sub.getPermission() != null) {
                             s.set("permission", sub.getPermission());
                             s.setComment("permission", "Permission required to run this subcommand. Leave empty to not require permission..");
@@ -636,10 +656,6 @@ public class CurrencyConfig {
                         sc.set("transactions", tcfg);
                         sc.setComment("transactions", "Subcommand to list transactions. 'permissions' controls viewing of other players.");
 
-                        if (tr.getAliases() != null) {
-                            tcfg.set("aliases", tr.getAliases());
-                            tcfg.setComment("aliases", "Additional aliases for 'transactions''.");
-                        }
                         if (tr.getPermission() != null) {
                             tcfg.set("permission", tr.getPermission());
                             tcfg.setComment("permission", "Permission to use /<cmd> transactions.");
@@ -680,7 +696,7 @@ public class CurrencyConfig {
             if (getMessages() != null) {
                 CommentedConfig msg = CommentedConfig.inMemory();
                 root.set("messages", msg);
-                root.setComment("messages", "Messages for this currency. Placeholders: {amount}, {player}. Use and for colors.");
+                root.setComment("messages", "Messages for this currency. Placeholders: {amount}, {player}. Use & for colors.");
 
                 putMessageWithComment(msg, "balance",
                         getMessages().get("balance"),
@@ -705,6 +721,15 @@ public class CurrencyConfig {
                 putMessageWithComment(msg, "invalid-amount",
                         getMessages().get("invalid-amount"),
                         "Error: Invalid amount.");
+
+                // Novas mensagens do toggle
+                putMessageWithComment(msg, "payment-toggle-enabled",
+                        getMessages().get("payment-toggle-enabled"),
+                        "When the player enables receiving payments (/<cmd> toggle).");
+
+                putMessageWithComment(msg, "payment-toggle-disabled",
+                        getMessages().get("payment-toggle-disabled"),
+                        "When the player disables receiving payments (/<cmd> toggle).");
 
                 for (Map.Entry<String, String> e : this.messages.entrySet()) {
                     String k = e.getKey();

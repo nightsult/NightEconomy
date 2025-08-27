@@ -5,6 +5,7 @@ import org.night.nighteconomy.currency.CurrencyConfig;
 import org.night.nighteconomy.service.MultiCurrencyEconomyService;
 import org.night.nighteconomy.database.MultiCurrencyDatabaseManager.RankingEntry;
 import org.night.nighteconomy.database.MultiCurrencyDatabaseManager.Transaction;
+import org.night.nighteconomy.util.PermissionUtil;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -34,7 +35,6 @@ public class MultiCurrencyCommand {
     }
 
     public void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        // Register commands for each currency
         Map<String, CurrencyConfig> currencies = configManager.getCurrencies();
 
         for (Map.Entry<String, CurrencyConfig> entry : currencies.entrySet()) {
@@ -44,7 +44,6 @@ public class MultiCurrencyCommand {
             registerCurrencyCommands(dispatcher, currencyId, config);
         }
 
-        // Register global economy command
         registerGlobalEconomyCommand(dispatcher);
     }
 
@@ -53,8 +52,10 @@ public class MultiCurrencyCommand {
             return;
         }
 
+        CurrencyConfig.CommandsConfig cmdCfg = config.getCommands();
+        String mainPermission = (cmdCfg != null) ? cmdCfg.getPermission() : null;
+
         for (String mainCommand : config.getCommands().getMain()) {
-            // Subcomandos com null-safety
             CurrencyConfig.SubcommandsConfig subs = config.getCommands().getSubcommands();
 
             CurrencyConfig.SubcommandConfig seeSub    = (subs != null) ? subs.getSee() : null;
@@ -71,35 +72,31 @@ public class MultiCurrencyCommand {
             java.util.List<String> txPerms            = (txSub != null) ? txSub.getPermissions() : null;
 
             dispatcher.register(Commands.literal(mainCommand)
+                    .requires(src -> org.night.nighteconomy.util.PermissionUtil.has(src, mainPermission))
                     .executes(context -> showBalance(context, currencyId))
 
-                    // /<cmd> <player>
                     .then(Commands.argument("player", EntityArgument.player())
                             .requires(source -> hasPermission(source, seeSub))
                             .executes(context -> showOtherBalance(context, currencyId)))
 
-                    // /<cmd> pay <player> <amount>
                     .then(Commands.literal("pay")
                             .requires(source -> hasPermission(source, paySub))
                             .then(Commands.argument("player", EntityArgument.player())
                                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
                                             .executes(context -> payPlayer(context, currencyId)))))
 
-                    // /<cmd> add <player> <amount>
                     .then(Commands.literal("add")
                             .requires(source -> hasPermission(source, addSub))
                             .then(Commands.argument("player", EntityArgument.player())
                                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
                                             .executes(context -> addMoney(context, currencyId)))))
 
-                    // /<cmd> remove <player> <amount>
                     .then(Commands.literal("remove")
                             .requires(source -> hasPermission(source, removeSub))
                             .then(Commands.argument("player", EntityArgument.player())
                                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
                                             .executes(context -> removeMoney(context, currencyId)))))
 
-                    // /<cmd> set <player> <amount>
                     .then(Commands.literal("set")
                             .requires(source -> hasPermission(source, setSub))
                             .then(Commands.argument("player", EntityArgument.player())
@@ -140,17 +137,12 @@ public class MultiCurrencyCommand {
 
     private void registerGlobalEconomyCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("neconomy")
-                .requires(source -> source.hasPermission(2)) // OP level 2
+                .requires(source -> source.hasPermission(2) || PermissionUtil.canUseAnyCommand(source))
 
-                // /neconomy reload
                 .then(Commands.literal("reload")
                         .executes(this::reloadAll))
-
-                // /neconomy list
                 .then(Commands.literal("list")
                         .executes(this::listCurrencies))
-
-                // /neconomy info <currency>
                 .then(Commands.literal("info")
                         .then(Commands.argument("currency", StringArgumentType.string())
                                 .executes(this::showCurrencyInfo)))
@@ -483,26 +475,18 @@ public class MultiCurrencyCommand {
         return 1;
     }
 
-    // Utility methods
+    // Utility methods (atualizados para usar PermissionUtil)
     private boolean hasPermission(CommandSourceStack source, CurrencyConfig.SubcommandConfig subcommand) {
         if (subcommand == null) return true;
-
-        if (subcommand.getPermission() != null) {
-            return source.hasPermission(2); // For now, require OP level 2
-        }
-
-        return true;
+        return PermissionUtil.has(source, subcommand.getPermission());
     }
 
     private boolean hasPermissionList(CommandSourceStack source, List<String> permissions) {
-        if (permissions == null || permissions.isEmpty()) return true;
-
-        // For now, require OP level 2 for any permission
-        return source.hasPermission(2);
+        return PermissionUtil.any(source, permissions);
     }
 
     private String getMessageFromConfig(CurrencyConfig config, String key, String defaultMessage) {
-        if (config.getMessages() != null && config.getMessages().containsKey(key)) {
+        if (config != null && config.getMessages() != null && config.getMessages().containsKey(key)) {
             return config.getMessages().get(key);
         }
         return defaultMessage;

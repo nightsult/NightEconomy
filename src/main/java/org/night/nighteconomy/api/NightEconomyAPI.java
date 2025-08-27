@@ -95,7 +95,21 @@ public interface NightEconomyAPI {
     void ensureAccountExists(UUID playerUuid, String currencyId, String username);
     
     // ========== BALANCE OPERATIONS ==========
-    
+
+    TycoonInfo getCurrentTycoon(String currencyId);
+
+    /**
+     * Último Tycoon persistido no banco (currency_state), atualizado quando o ranking muda.
+     * Retorna null se ainda não há registro.
+     */
+    TycoonInfo getLastKnownTycoon(String currencyId);
+
+    /**
+     * Tag configurada do Tycoon para a moeda (por exemplo: "&a[$]").
+     * Nunca retorna null; retorna "" se não configurado.
+     */
+    String getTycoonTag(String currencyId);
+
     /**
      * Obtém o saldo de um jogador em uma moeda específica
      * 

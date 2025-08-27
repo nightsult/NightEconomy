@@ -6,15 +6,22 @@ import org.apache.logging.log4j.Logger;
 import java.sql.*;
 import java.util.*;
 
+/**
+ * Database manager with prepared statement reuse, atomic pay transaction,
+ * transaction retention, and tuned SQLite PRAGMAs.
+ * All methods are intended to be called ONLY from the dbExecutor single thread.
+ */
 public class MultiCurrencyDatabaseManager {
     private static final Logger LOGGER = LogManager.getLogger();
 
     private final Connection conn;
 
-    private int busyTimeoutMs = 10_000;
-    private int walAutocheckpointPages = 1000;
-    private long mmapSizeBytes = 268_435_456L;
+    // Tunable PRAGMA defaults (can be changed at runtime via setters)
+    private int busyTimeoutMs = 10_000;           // default 10s
+    private int walAutocheckpointPages = 1000;    // default ~1000 frames
+    private long mmapSizeBytes = 268_435_456L;    // default 256 MiB (0 to disable)
 
+    // Prepared statements (reused)
     private PreparedStatement psHasAccount;
     private PreparedStatement psCreateAccount;
     private PreparedStatement psGetBalance;
@@ -30,25 +37,38 @@ public class MultiCurrencyDatabaseManager {
     private PreparedStatement psGetTopPlayers;
     private PreparedStatement psGetPlayerPosition;
     private PreparedStatement psGetTopPlayerUuid;
+    private PreparedStatement psGetTopPlayerInfo;
     private PreparedStatement psDeleteRankingCache;
     private PreparedStatement psInsertRankingCache;
+    // Retenção de transactions
     private PreparedStatement psDeleteOldTransactionsDays;
+
+    // Tycoon state
+    private PreparedStatement psGetLastTycoon;
+    private PreparedStatement psGetLastTycoonInfo; // novo: uuid + username persistidos
+    private PreparedStatement psUpsertLastTycoon;
 
     public MultiCurrencyDatabaseManager(Connection conn) throws SQLException {
         this.conn = conn;
         this.conn.setAutoCommit(true);
 
+        // Apply and log PRAGMAs early
         applyPragmas();
         logEnvironment();
 
+        // Ensure schema exists BEFORE preparing statements
         ensureSchema();
 
+        // Now prepare statements safely
         prepareStatements();
     }
+
+    // ------------------- PRAGMAs -------------------
 
     private void applyPragmas() throws SQLException {
         try (Statement st = conn.createStatement()) {
             st.execute("PRAGMA foreign_keys = ON");
+            // Journal mode WAL
             try (ResultSet rs = st.executeQuery("PRAGMA journal_mode = WAL")) {
                 if (rs.next()) {
                     String mode = rs.getString(1);
@@ -56,10 +76,13 @@ public class MultiCurrencyDatabaseManager {
                 }
             }
 
+            // Busy timeout (ms)
             st.execute("PRAGMA busy_timeout = " + busyTimeoutMs);
 
+            // WAL autocheckpoint (frames/pages)
             st.execute("PRAGMA wal_autocheckpoint = " + walAutocheckpointPages);
 
+            // Try to enable mmap (bytes). Some platforms may clamp or disable.
             if (mmapSizeBytes >= 0) {
                 st.execute("PRAGMA mmap_size = " + mmapSizeBytes);
             }
@@ -68,6 +91,7 @@ public class MultiCurrencyDatabaseManager {
             throw e;
         }
 
+        // Additional DB responsiveness and safety recommendations (best-effort logs)
         logPragmasStatus();
     }
 
@@ -79,6 +103,7 @@ public class MultiCurrencyDatabaseManager {
                 }
             }
 
+            // compile_options are optional; safe to log at DEBUG
             try (ResultSet rs = st.executeQuery("PRAGMA compile_options")) {
                 List<String> options = new ArrayList<>();
                 while (rs.next()) {
@@ -152,6 +177,8 @@ public class MultiCurrencyDatabaseManager {
     public int getWalAutocheckpointPages() { return walAutocheckpointPages; }
     public long getMmapSizeBytes() { return mmapSizeBytes; }
 
+    // ------------------- Schema -------------------
+
     private void ensureSchema() throws SQLException {
         int userVersion = 0;
         try (Statement st = conn.createStatement();
@@ -161,9 +188,9 @@ public class MultiCurrencyDatabaseManager {
             LOGGER.warn("Could not read PRAGMA user_version: {}", e.getMessage());
         }
 
-        if (userVersion == 0) {
-            LOGGER.info("Initializing NightEconomy schema (v1)...");
-            try (Statement st = conn.createStatement()) {
+        try (Statement st = conn.createStatement()) {
+            if (userVersion < 1) {
+                LOGGER.info("Initializing NightEconomy schema (v1)...");
                 st.execute("""
                         CREATE TABLE IF NOT EXISTS accounts (
                           uuid TEXT NOT NULL,
@@ -189,6 +216,7 @@ public class MultiCurrencyDatabaseManager {
                         )
                         """);
 
+                // Helpful indexes for transaction queries
                 st.execute("CREATE INDEX IF NOT EXISTS idx_tx_sender_currency_date ON transactions(sender_uuid, currency_id, created_at DESC)");
                 st.execute("CREATE INDEX IF NOT EXISTS idx_tx_receiver_currency_date ON transactions(receiver_uuid, currency_id, created_at DESC)");
                 st.execute("CREATE INDEX IF NOT EXISTS idx_tx_currency_date ON transactions(currency_id, created_at DESC)");
@@ -203,21 +231,40 @@ public class MultiCurrencyDatabaseManager {
                           PRIMARY KEY (currency_id, position)
                         )
                         """);
+                // One player per currency in cache
                 st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_rank_currency_uuid ON ranking_cache(currency_id, uuid)");
 
+                // Optionally helpful account indexes
                 st.execute("CREATE INDEX IF NOT EXISTS idx_accounts_currency_uuid ON accounts(currency_id, uuid)");
 
                 st.execute("PRAGMA user_version = 1");
-            } catch (SQLException e) {
-                LOGGER.error("Failed to initialize schema: ", e);
-                throw e;
+                LOGGER.info("NightEconomy schema initialized (v1).");
+                userVersion = 1;
             }
-            LOGGER.info("NightEconomy schema initialized (v1).");
+
+            if (userVersion < 2) {
+                LOGGER.info("Applying schema migration to v2 (currency_state)...");
+                st.execute("""
+                        CREATE TABLE IF NOT EXISTS currency_state (
+                          currency_id TEXT PRIMARY KEY,
+                          tycoon_uuid TEXT,
+                          tycoon_username TEXT,
+                          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """);
+                st.execute("PRAGMA user_version = 2");
+                LOGGER.info("Schema migration to v2 completed.");
+            }
+        } catch (SQLException e) {
+            LOGGER.error("Failed to initialize/migrate schema: ", e);
+            throw e;
         }
     }
 
+    // ------------------- Prepared Statements -------------------
 
     private void prepareStatements() throws SQLException {
+        // accounts: (uuid TEXT, currency_id TEXT, username TEXT, balance REAL, payment_enabled INTEGER)
         psHasAccount = conn.prepareStatement(
                 "SELECT 1 FROM accounts WHERE uuid=? AND currency_id=?"
         );
@@ -233,6 +280,7 @@ public class MultiCurrencyDatabaseManager {
         psAddBalance = conn.prepareStatement(
                 "UPDATE accounts SET balance = balance + ? WHERE uuid=? AND currency_id=?"
         );
+        // sub sem verificação; a verificação de saldo é feita em transações atômicas ou pelo serviço
         psSubBalanceNoCheck = conn.prepareStatement(
                 "UPDATE accounts SET balance = balance - ? WHERE uuid=? AND currency_id=?"
         );
@@ -245,6 +293,7 @@ public class MultiCurrencyDatabaseManager {
         psSetPaymentEnabled = conn.prepareStatement(
                 "UPDATE accounts SET payment_enabled=? WHERE uuid=? AND currency_id=?"
         );
+        // transactions: (id INTEGER PK, currency_id TEXT, sender_uuid TEXT, receiver_uuid TEXT, amount REAL, fee REAL, type TEXT, description TEXT, created_at DATETIME)
         psRecordTransaction = conn.prepareStatement(
                 "INSERT INTO transactions (currency_id, sender_uuid, receiver_uuid, amount, fee, type, description, created_at) " +
                         "VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
@@ -257,6 +306,7 @@ public class MultiCurrencyDatabaseManager {
         psGetAllPlayerBalances = conn.prepareStatement(
                 "SELECT currency_id, balance FROM accounts WHERE uuid=?"
         );
+        // ranking_cache: (currency_id TEXT, uuid TEXT, username TEXT, balance REAL, position INTEGER)
         psGetTopPlayers = conn.prepareStatement(
                 "SELECT uuid, username, balance, position FROM ranking_cache " +
                         "WHERE currency_id=? ORDER BY position ASC LIMIT ?"
@@ -267,9 +317,13 @@ public class MultiCurrencyDatabaseManager {
         psGetTopPlayerUuid = conn.prepareStatement(
                 "SELECT uuid FROM ranking_cache WHERE currency_id=? ORDER BY position ASC LIMIT 1"
         );
+        psGetTopPlayerInfo = conn.prepareStatement(
+                "SELECT uuid, username FROM ranking_cache WHERE currency_id=? ORDER BY position ASC LIMIT 1"
+        );
         psDeleteRankingCache = conn.prepareStatement(
                 "DELETE FROM ranking_cache WHERE currency_id=?"
         );
+        // Window function requires SQLite 3.25+; if not available, replace with a manual ranking fill
         psInsertRankingCache = conn.prepareStatement(
                 "INSERT INTO ranking_cache (currency_id, uuid, username, balance, position) " +
                         "SELECT ?, a.uuid, a.username, a.balance, " +
@@ -277,11 +331,29 @@ public class MultiCurrencyDatabaseManager {
                         "FROM accounts a WHERE a.currency_id=?"
         );
 
+        // Retenção de transactions: apaga registros mais antigos que N dias
         psDeleteOldTransactionsDays = conn.prepareStatement(
                 "DELETE FROM transactions WHERE julianday(created_at) < julianday('now') - ?"
         );
+
+        // Tycoon state
+        psGetLastTycoon = conn.prepareStatement(
+                "SELECT tycoon_uuid FROM currency_state WHERE currency_id=?"
+        );
+        psGetLastTycoonInfo = conn.prepareStatement(
+                "SELECT tycoon_uuid, tycoon_username FROM currency_state WHERE currency_id=?"
+        );
+        psUpsertLastTycoon = conn.prepareStatement(
+                "INSERT INTO currency_state (currency_id, tycoon_uuid, tycoon_username, updated_at) " +
+                        "VALUES (?,?,?,CURRENT_TIMESTAMP) " +
+                        "ON CONFLICT(currency_id) DO UPDATE SET " +
+                        "tycoon_uuid=excluded.tycoon_uuid, " +
+                        "tycoon_username=excluded.tycoon_username, " +
+                        "updated_at=CURRENT_TIMESTAMP"
+        );
     }
 
+    // ------------------- Model Classes -------------------
 
     public static class Transaction {
         public final String currencyId;
@@ -305,6 +377,7 @@ public class MultiCurrencyDatabaseManager {
             this.createdAt = createdAt;
         }
 
+        // Getters (compat)
         public String getCurrencyId() { return currencyId; }
         public String getSenderUuid() { return senderUuid; }
         public String getReceiverUuid() { return receiverUuid; }
@@ -328,12 +401,25 @@ public class MultiCurrencyDatabaseManager {
             this.position = position;
         }
 
+        // Getters (compat)
         public String getUuid() { return uuid; }
         public String getUsername() { return username; }
         public double getBalance() { return balance; }
         public int getPosition() { return position; }
     }
 
+    // Tycoon last-known state record
+    public static class TycoonStateRecord {
+        public final String uuid;
+        public final String username;
+
+        public TycoonStateRecord(String uuid, String username) {
+            this.uuid = uuid;
+            this.username = username;
+        }
+    }
+
+    // Atomic pay transaction result
     public static class PayTxResult {
         public enum Status { OK, RECEIVER_BLOCKED, INSUFFICIENT_FUNDS, SENDER_NOT_FOUND, RECEIVER_NOT_FOUND, ERROR }
         public final Status status;
@@ -342,6 +428,8 @@ public class MultiCurrencyDatabaseManager {
             this.status = status;
         }
     }
+
+    // --------------- Basic account ops ----------------
 
     public boolean hasAccount(UUID playerUuid, String currencyId) {
         try {
@@ -438,6 +526,8 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
+    // --------------- Payment toggles ----------------
+
     public boolean isPaymentEnabled(UUID playerUuid, String currencyId) {
         try {
             psIsPaymentEnabled.clearParameters();
@@ -449,7 +539,7 @@ public class MultiCurrencyDatabaseManager {
         } catch (SQLException e) {
             LOGGER.error("isPaymentEnabled error", e);
         }
-        return true;
+        return true; // default permissive
     }
 
     public boolean setPaymentEnabled(UUID playerUuid, String currencyId, boolean enabled) {
@@ -464,6 +554,8 @@ public class MultiCurrencyDatabaseManager {
             return false;
         }
     }
+
+    // --------------- Transactions ----------------
 
     public void recordTransaction(String currencyId, UUID sender, UUID receiver, double amount, double fee, String type, String description) {
         try {
@@ -526,6 +618,8 @@ public class MultiCurrencyDatabaseManager {
         return out;
     }
 
+    // --------------- Ranking ----------------
+
     public List<RankingEntry> getTopPlayers(String currencyId, int limit) {
         List<RankingEntry> list = new ArrayList<>();
         try {
@@ -575,6 +669,23 @@ public class MultiCurrencyDatabaseManager {
         return null;
     }
 
+    public RankingEntry getTopPlayerInfo(String currencyId) {
+        try {
+            psGetTopPlayerInfo.clearParameters();
+            psGetTopPlayerInfo.setString(1, currencyId);
+            try (ResultSet rs = psGetTopPlayerInfo.executeQuery()) {
+                if (rs.next()) {
+                    String uuid = rs.getString(1);
+                    String username = rs.getString(2);
+                    return new RankingEntry(uuid, username, 0.0, 1);
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getTopPlayerInfo error", e);
+        }
+        return null;
+    }
+
     public void updateRankingCache(String currencyId) {
         try {
             conn.setAutoCommit(false);
@@ -600,6 +711,56 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
+    // --------------- Tycoon state ----------------
+
+    public String getLastTycoonUuid(String currencyId) {
+        try {
+            psGetLastTycoon.clearParameters();
+            psGetLastTycoon.setString(1, currencyId);
+            try (ResultSet rs = psGetLastTycoon.executeQuery()) {
+                if (rs.next()) return rs.getString(1);
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getLastTycoonUuid error", e);
+        }
+        return null;
+    }
+
+    // novo: retorna uuid e username persistidos (currency_state)
+    public TycoonStateRecord getLastTycoonInfo(String currencyId) {
+        try {
+            psGetLastTycoonInfo.clearParameters();
+            psGetLastTycoonInfo.setString(1, currencyId);
+            try (ResultSet rs = psGetLastTycoonInfo.executeQuery()) {
+                if (rs.next()) {
+                    return new TycoonStateRecord(rs.getString(1), rs.getString(2));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("getLastTycoonInfo error", e);
+        }
+        return null;
+    }
+
+    public boolean upsertLastTycoon(String currencyId, String tycoonUuid, String tycoonUsername) {
+        try {
+            psUpsertLastTycoon.clearParameters();
+            psUpsertLastTycoon.setString(1, currencyId);
+            psUpsertLastTycoon.setString(2, tycoonUuid);
+            psUpsertLastTycoon.setString(3, tycoonUsername);
+            return psUpsertLastTycoon.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.error("upsertLastTycoon error", e);
+            return false;
+        }
+    }
+
+    // --------------- Retenção e manutenção ----------------
+
+    /**
+     * Apaga transactions mais antigas que retentionDays.
+     * @return número de linhas apagadas
+     */
     public int pruneOldTransactions(double retentionDays) {
         try {
             psDeleteOldTransactionsDays.clearParameters();
@@ -641,9 +802,12 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
+    /**
+     * Executa VACUUM (fora de transação).
+     */
     public boolean vacuum() {
         try {
-            conn.setAutoCommit(true);
+            conn.setAutoCommit(true); // garantir fora de transação
             try (Statement st = conn.createStatement()) {
                 st.execute("VACUUM");
                 LOGGER.debug("VACUUM executed");
@@ -655,16 +819,24 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
+    // --------------- Atomic pay ----------------
+
+    /**
+     * Atomic pay within a single DB transaction.
+     * amount: amount to transfer to receiver; fee: extra amount to be debited from sender (not credited to receiver).
+     */
     public PayTxResult payAtomic(UUID senderUuid, UUID receiverUuid, String currencyId, double amount, double fee) {
         try {
             conn.setAutoCommit(false);
             try {
+                // Check receiver accepts payments
                 if (!isPaymentEnabled(receiverUuid, currencyId)) {
                     conn.rollback();
                     conn.setAutoCommit(true);
                     return new PayTxResult(PayTxResult.Status.RECEIVER_BLOCKED);
                 }
 
+                // Ensure both accounts exist
                 if (!hasAccount(senderUuid, currencyId)) {
                     conn.rollback();
                     conn.setAutoCommit(true);
@@ -677,6 +849,7 @@ public class MultiCurrencyDatabaseManager {
                 }
 
                 double totalDebit = amount + Math.max(0.0, fee);
+                // Check sender balance
                 double senderBal = getBalance(senderUuid, currencyId);
                 if (senderBal < totalDebit) {
                     conn.rollback();
@@ -684,18 +857,21 @@ public class MultiCurrencyDatabaseManager {
                     return new PayTxResult(PayTxResult.Status.INSUFFICIENT_FUNDS);
                 }
 
+                // Perform updates
                 if (!subtractBalance(senderUuid, currencyId, totalDebit)) {
                     conn.rollback();
                     conn.setAutoCommit(true);
                     return new PayTxResult(PayTxResult.Status.INSUFFICIENT_FUNDS);
                 }
                 if (!addBalance(receiverUuid, currencyId, amount)) {
+                    // try rollback of debit (best effort)
                     addBalance(senderUuid, currencyId, totalDebit);
                     conn.rollback();
                     conn.setAutoCommit(true);
                     return new PayTxResult(PayTxResult.Status.ERROR);
                 }
 
+                // Record transaction
                 recordTransaction(currencyId, senderUuid, receiverUuid, amount, fee, "PAY", "Player payment");
 
                 conn.commit();
@@ -714,13 +890,17 @@ public class MultiCurrencyDatabaseManager {
         }
     }
 
+    // --------------- Shutdown ----------------
+
     public void close() {
+        // Close prepared statements
         List<AutoCloseable> closables = Arrays.asList(
                 psHasAccount, psCreateAccount, psGetBalance, psSetBalance, psAddBalance,
                 psSubBalanceNoCheck, psResetBalance, psIsPaymentEnabled, psSetPaymentEnabled,
                 psRecordTransaction, psGetPlayerTransactions, psGetAllPlayerBalances,
-                psGetTopPlayers, psGetPlayerPosition, psGetTopPlayerUuid,
-                psDeleteRankingCache, psInsertRankingCache, psDeleteOldTransactionsDays
+                psGetTopPlayers, psGetPlayerPosition, psGetTopPlayerUuid, psGetTopPlayerInfo,
+                psDeleteRankingCache, psInsertRankingCache, psDeleteOldTransactionsDays,
+                psGetLastTycoon, psGetLastTycoonInfo, psUpsertLastTycoon
         );
         for (AutoCloseable c : closables) {
             if (c != null) {

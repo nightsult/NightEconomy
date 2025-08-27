@@ -92,14 +92,28 @@ public class RankingManager {
         return topPlayers.isEmpty() ? null : topPlayers.get(0);
     }
 
-    public boolean isPlayerMagnata(UUID playerUuid, String currencyId) {
+    // Novo: método com nome atualizado
+    public boolean isPlayerTycoon(UUID playerUuid, String currencyId) {
         RankingEntry topPlayer = getTopPlayer(currencyId);
         return topPlayer != null && playerUuid.toString().equals(topPlayer.uuid);
     }
 
-    public String getMagnataTag(String currencyId) {
+    // Compatibilidade: manter método antigo chamando o novo
+    @Deprecated
+    public boolean isPlayerMagnata(UUID playerUuid, String currencyId) {
+        return isPlayerTycoon(playerUuid, currencyId);
+    }
+
+    // Novo: retorna a tag configurada do Tycoon
+    public String getTycoonTag(String currencyId) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
-        return config != null ? config.getMagnata() : "";
+        return config != null ? (config.getTycoon() != null ? config.getTycoon() : "") : "";
+    }
+
+    // Compatibilidade: manter método antigo chamando o novo
+    @Deprecated
+    public String getMagnataTag(String currencyId) {
+        return getTycoonTag(currencyId);
     }
 
     public List<String> formatRankingDisplay(String currencyId, int limit) {
