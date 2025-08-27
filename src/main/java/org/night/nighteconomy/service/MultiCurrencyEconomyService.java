@@ -2,7 +2,6 @@ package org.night.nighteconomy.service;
 
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.night.nighteconomy.api.TycoonInfo;
 import org.night.nighteconomy.config.ConfigManager;
 import org.night.nighteconomy.currency.CurrencyConfig;
 import org.night.nighteconomy.database.MultiCurrencyDatabaseManager;
@@ -523,33 +522,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    public TycoonInfo getCurrentTycoonInfo(String currencyId) {
-        var top = databaseManager.getTopPlayerInfo(currencyId);
-        if (top == null || top.uuid == null) return null;
-        try {
-            return new TycoonInfo(java.util.UUID.fromString(top.uuid), top.username);
-        } catch (IllegalArgumentException ex) {
-            // uuid inválido no cache (não deveria acontecer)
-            return new TycoonInfo(null, top.username);
-        }
-    }
-
-    /**
-     * Último Tycoon persistido (currency_state). Null se não houver registro.
-     */
-    public TycoonInfo getLastKnownTycoonInfo(String currencyId) {
-        var rec = databaseManager.getLastTycoonInfo(currencyId);
-        if (rec == null || rec.uuid == null) return null;
-        try {
-            return new TycoonInfo(java.util.UUID.fromString(rec.uuid), rec.username);
-        } catch (IllegalArgumentException ex) {
-            return new TycoonInfo(null, rec.username);
-        }
-    }
-
-    /**
-     * Tag do Tycoon configurada na moeda (string de cores com &).
-     */
     public String getTycoonTag(String currencyId) {
         var cfg = configManager.getCurrency(currencyId);
         return cfg != null && cfg.getTycoon() != null ? cfg.getTycoon() : "";

@@ -1,10 +1,9 @@
 package org.night.nighteconomy;
 
-import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.night.nighteconomy.api.NightEconomyAPI;
-import org.night.nighteconomy.api.NightEconomyAPIImpl;
 import org.night.nighteconomy.api.NightEconomyAPIProvider;
+import org.night.nighteconomy.api.data.RankEntry;
+import org.night.nighteconomy.api.data.TycoonInfo;
 import org.night.nighteconomy.api.event.NightEconomyReadyEvent;
 import org.night.nighteconomy.command.MultiCurrencyCommand;
 import org.night.nighteconomy.config.ConfigManager;
@@ -12,6 +11,7 @@ import org.night.nighteconomy.database.MultiCurrencyDatabaseManager;
 import org.night.nighteconomy.placeholder.PlaceholderManager;
 import org.night.nighteconomy.ranking.RankingManager;
 import org.night.nighteconomy.service.MultiCurrencyEconomyService;
+
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
@@ -21,12 +21,22 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+/**
+ * Main do mod NightEconomy.
+ * Atualizada para a nova API mínima (somente leitura). Não usa mais NightEconomyAPIImpl.
+ */
 @Mod(org.night.nighteconomy.Nighteconomy.MODID)
 public class Nighteconomy {
     public static final String MODID = "nighteconomy";
@@ -39,9 +49,10 @@ public class Nighteconomy {
     private RankingManager rankingManager;
     private PlaceholderManager placeholderManager;
     private MultiCurrencyCommand commandManager;
-    private NightEconomyAPIImpl apiImpl;
 
-    private static org.night.nighteconomy.Nighteconomy instance;
+    private NightEconomyAPI api; // implementação interna mínima
+
+    private static Nighteconomy instance;
     private boolean apiPublished = false;
 
     public Nighteconomy(IEventBus modEventBus, ModContainer modContainer) {
@@ -58,24 +69,24 @@ public class Nighteconomy {
             configManager = new ConfigManager(configDir);
 
             Path databasePath = configDir.resolve("nighteconomy.db");
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + databasePath.toString());
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + databasePath);
             databaseManager = new MultiCurrencyDatabaseManager(conn);
 
             rankingManager = new RankingManager(databaseManager, configManager);
             economyService = new MultiCurrencyEconomyService(databaseManager, configManager);
 
             placeholderManager = new PlaceholderManager(economyService, configManager);
+            // Mantido para compatibilidade (no-op atualmente)
             placeholderManager.registerPlaceholders();
 
             commandManager = new MultiCurrencyCommand(economyService, configManager);
 
-            apiImpl = new NightEconomyAPIImpl(economyService, configManager, placeholderManager, rankingManager);
+            // Implementação mínima da API (read-only), sem depender de NightEconomyAPIImpl
+            this.api = new DefaultNightEconomyAPI(economyService, rankingManager);
 
-            // Expor API no provider o quanto antes
-            if (!NightEconomyAPIProvider.isReady()) {
-                NightEconomyAPIProvider.set(apiImpl);
-                LOGGER.info("NightEconomy API set in provider ({}).", apiImpl.getAPIVersion());
-            }
+            // Publica no provider imediatamente (idempotente)
+            NightEconomyAPIProvider.set(this.api);
+            LOGGER.info("NightEconomy API set in provider.");
 
             LOGGER.info("NightEconomy v{} successfully configured!", VERSION);
         } catch (Exception e) {
@@ -104,18 +115,15 @@ public class Nighteconomy {
                 LOGGER.info("Rankings successfully initialized!");
             }
 
-            // Postar evento de API pronta uma única vez
-            if (!apiPublished && apiImpl != null) {
-                if (!NightEconomyAPIProvider.isReady()) {
-                    NightEconomyAPIProvider.set(apiImpl);
-                }
-                NeoForge.EVENT_BUS.post(new NightEconomyReadyEvent(apiImpl));
+            // Dispara o evento de API pronta apenas uma vez
+            if (!apiPublished && api != null) {
+                NightEconomyAPIProvider.set(api); // garante que está definido
+                NeoForge.EVENT_BUS.post(new NightEconomyReadyEvent(api));
                 apiPublished = true;
                 LOGGER.info("NightEconomyReadyEvent posted; API ready.");
             }
 
             LOGGER.info("NightEconomy v{} successfully uploaded to the server!", VERSION);
-
         } catch (Exception e) {
             LOGGER.error("Error loading NightEconomy on server: ", e);
         }
@@ -151,32 +159,12 @@ public class Nighteconomy {
         }
     }
 
-    @SubscribeEvent
-    public void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
-        try {
-            ServerPlayer p = (ServerPlayer) e.getEntity();
-            NightEconomyAPI api = Nighteconomy.getAPI();
-            if (api == null) return;
-
-            ConfigManager cfgMgr = getConfigManager();
-            if (cfgMgr == null || cfgMgr.getCurrencies().isEmpty()) return;
-
-            String currency = cfgMgr.getCurrencies().containsKey("money")
-                    ? "money"
-                    : cfgMgr.getCurrencies().keySet().iterator().next();
-
-            api.ensureAccountExists(p.getUUID(), currency, p.getName().getString());
-        } catch (Exception ex) {
-            // ignore
-        }
-    }
-
-    public static org.night.nighteconomy.Nighteconomy getInstance() {
+    public static Nighteconomy getInstance() {
         return instance;
     }
 
     public static NightEconomyAPI getAPI() {
-        return instance != null ? instance.apiImpl : null;
+        return instance != null ? instance.api : null;
     }
 
     public ConfigManager getConfigManager() { return configManager; }
@@ -185,7 +173,7 @@ public class Nighteconomy {
     public RankingManager getRankingManager() { return rankingManager; }
     public PlaceholderManager getPlaceholderManager() { return placeholderManager; }
     public MultiCurrencyCommand getCommandManager() { return commandManager; }
-    public NightEconomyAPIImpl getAPIImpl() { return apiImpl; }
+
     public String getModId() { return MODID; }
     public String getVersion() { return VERSION; }
 
@@ -196,7 +184,7 @@ public class Nighteconomy {
                 rankingManager != null &&
                 placeholderManager != null &&
                 commandManager != null &&
-                apiImpl != null;
+                api != null;
     }
 
     public void reloadMod() {
@@ -207,6 +195,74 @@ public class Nighteconomy {
             LOGGER.info("NightEconomy reload successfully");
         } catch (Exception e) {
             LOGGER.error("Error reloading NightEconomy: ", e);
+        }
+    }
+
+    /**
+     * Implementação mínima e interna da NightEconomyAPI para expor somente leitura.
+     */
+    private static final class DefaultNightEconomyAPI implements NightEconomyAPI {
+        private final MultiCurrencyEconomyService economyService;
+        private final RankingManager rankingManager;
+
+        DefaultNightEconomyAPI(MultiCurrencyEconomyService economyService, RankingManager rankingManager) {
+            this.economyService = economyService;
+            this.rankingManager = rankingManager;
+        }
+
+        @Override
+        public Set<String> getAvailableCurrencies() {
+            return economyService.getAvailableCurrencies();
+        }
+
+        @Override
+        public BigDecimal getBalance(UUID playerId, String currencyId) {
+            // Assume que o serviço trabalha em double; converte para BigDecimal
+            double balance = economyService.getBalance(playerId, currencyId);
+            return BigDecimal.valueOf(balance);
+        }
+
+        @Override
+        public TycoonInfo getCurrentTycoon(String currencyId) {
+            MultiCurrencyDatabaseManager.RankingEntry top = rankingManager.getTopPlayer(currencyId);
+            if (top == null) return null;
+
+            UUID uuid = null;
+            try {
+                uuid = top.getUuid() != null ? UUID.fromString(top.getUuid()) : null;
+            } catch (Exception ignored) {}
+
+            String tag = rankingManager.getTycoonTag(currencyId);
+            return new TycoonInfo(
+                    uuid,
+                    top.getUsername(),
+                    BigDecimal.valueOf(top.getBalance()),
+                    tag
+            );
+        }
+
+        @Override
+        public String getTycoonTag(String currencyId) {
+            return rankingManager.getTycoonTag(currencyId);
+        }
+
+        @Override
+        public List<RankEntry> getTopRanking(String currencyId, int limit) {
+            List<MultiCurrencyDatabaseManager.RankingEntry> top = rankingManager.getTopPlayers(currencyId, limit);
+            return top.stream()
+                    .map(e -> {
+                        UUID uuid = null;
+                        try {
+                            uuid = e.getUuid() != null ? UUID.fromString(e.getUuid()) : null;
+                        } catch (Exception ignored) {}
+                        return new RankEntry(
+                                e.getPosition(),
+                                uuid,
+                                e.getUsername(),
+                                BigDecimal.valueOf(e.getBalance())
+                        );
+                    })
+                    .collect(Collectors.toList());
         }
     }
 }

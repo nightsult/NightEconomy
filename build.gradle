@@ -6,7 +6,12 @@ plugins {
 }
 
 group = 'org.night'
-version = '3.1.0'
+version = '3.2.0'
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
 
 publishing {
     publications {
@@ -21,8 +26,8 @@ publishing {
                 url = 'https://github.com/nightsult/NightEconomy'
                 licenses {
                     license {
-                        name = 'MIT'
-                        url = 'https://opensource.org/licenses/MIT'
+                        name = 'Apache-2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
                     }
                 }
                 scm {
@@ -42,6 +47,15 @@ publishing {
     repositories {
         mavenLocal()
     }
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    // Silencia validações de doclint (faltas de comentários, etc.)
+    options.addStringOption('Xdoclint:none', '-quiet')
+    // Não falhar o build mesmo se houver erro de javadoc
+    failOnError = false
 }
 
 repositories {

@@ -4,16 +4,17 @@ import net.neoforged.bus.api.Event;
 import org.night.nighteconomy.api.NightEconomyAPI;
 
 /**
- * Event fired when the NightEconomy API is ready for consumption by other mods.
+ * Evento disparado quando a API está pronta para uso.
+ * Ouvintes podem chamar NightEconomyAPIProvider.get() com segurança após este evento.
  */
-public class NightEconomyReadyEvent extends Event {
+public final class NightEconomyReadyEvent extends Event {
     private final NightEconomyAPI api;
 
     public NightEconomyReadyEvent(NightEconomyAPI api) {
         this.api = api;
     }
 
-    public NightEconomyAPI getAPI() {
+    public NightEconomyAPI getApi() {
         return api;
     }
 }
