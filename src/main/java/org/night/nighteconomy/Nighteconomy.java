@@ -33,10 +33,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Main do mod NightEconomy.
- * Atualizada para a nova API mínima (somente leitura). Não usa mais NightEconomyAPIImpl.
- */
 @Mod(org.night.nighteconomy.Nighteconomy.MODID)
 public class Nighteconomy {
     public static final String MODID = "nighteconomy";
