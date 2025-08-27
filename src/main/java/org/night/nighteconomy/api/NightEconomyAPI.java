@@ -58,4 +58,8 @@ public interface NightEconomyAPI {
      * @throws IllegalArgumentException se a moeda não existir
      */
     List<RankEntry> getTopRanking(String currencyId, int limit);
+
+    boolean tryDebit(UUID playerId, String currencyId, java.math.BigDecimal amount, String reason);
+
+    String formatAmount(String currencyId, java.math.BigDecimal amount);
 }
