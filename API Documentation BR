@@ -13,7 +13,10 @@ A API do NightEconomy fornece acesso completo ao sistema de economia multi-moeda
 ### Método 1: Através do Registro de Serviços (Recomendado)
 
 ```java
-import com.example.economymod.api.NightEconomyAPI;
+import org.night.nighteconomy.api.NightEconomyAPI;
+import org.night.nighteconomy.api.NightEconomyAPIProvider;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 public class MeuMod {
     private NightEconomyAPI economyAPI;
@@ -34,12 +37,96 @@ public class MeuMod {
 ### Método 2: Através de Eventos
 
 ```java
-@SubscribeEvent
-public void onNightEconomyReady(NightEconomyReadyEvent event) {
-    economyAPI = event.getAPI();
-    // Sua lógica de inicialização aqui
+import org.night.nighteconomy.api.event.NightEconomyReadyEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+
+public class MeuMod {
+    private NightEconomyAPI economyAPI;
+
+    @SubscribeEvent
+    public void onNightEconomyReady(NightEconomyReadyEvent event) {
+        economyAPI = event.getAPI();
+        // Sua lógica de inicialização aqui
+    }
 }
 ```
+
+## Mini Tutorial: Tycoon (Magnata)
+
+A partir da API 3.0.0, o termo “magnata” foi substituído por “tycoon”. Há novas APIs para:
+- Obter o Tycoon atual (top 1 no ranking) de uma moeda.
+- Obter o último Tycoon conhecido (persistido na base) de uma moeda.
+- Obter a tag configurada do Tycoon (ex.: "&a[$]") para exibir em nomes/mensagens.
+
+### Passo a passo
+
+1) Obtenha a instância da API (veja “Obtendo a Instância da API”).
+
+2) Leia o Tycoon atual, o último Tycoon conhecido e a tag:
+
+```java
+import org.night.nighteconomy.api.TycoonInfo;
+
+String currencyId = "money";
+
+// Tycoon atual (lido do ranking_cache)
+TycoonInfo current = economyAPI.getCurrentTycoon(currencyId);
+
+// Último Tycoon conhecido (persistido em banco quando o ranking muda)
+TycoonInfo last = economyAPI.getLastKnownTycoon(currencyId);
+
+// Tag configurada (cores com &)
+String tycoonTag = economyAPI.getTycoonTag(currencyId);
+
+// Exemplos de uso:
+if (current != null) {
+    String name = current.getUsername() != null ? current.getUsername() : String.valueOf(current.getUuid());
+    System.out.println("Tycoon atual de " + currencyId + ": " + name);
+}
+if (last != null) {
+    String name = last.getUsername() != null ? last.getUsername() : String.valueOf(last.getUuid());
+    System.out.println("Último Tycoon conhecido: " + name);
+}
+System.out.println("Tag do Tycoon: " + tycoonTag);
+```
+
+3) Exiba a tag do Tycoon ao lado do nome do top 1 (exemplo simples para chat):
+
+```java
+// Utilitário rápido para traduzir & para §
+static String colorize(String s) { return s == null ? "" : s.replace('&', '§'); }
+
+TycoonInfo cur = economyAPI.getCurrentTycoon(currencyId);
+if (cur != null) {
+    String displayName = (cur.getUsername() != null ? cur.getUsername() : String.valueOf(cur.getUuid()));
+    String line = colorize(economyAPI.getTycoonTag(currencyId)) + " " + displayName;
+    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
+}
+```
+
+4) Reaja quando o Tycoon mudar (evento):
+
+```java
+import org.night.nighteconomy.api.event.TycoonChangedEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+
+public class TycoonListener {
+    @SubscribeEvent
+    public void onTycoonChanged(TycoonChangedEvent event) {
+        String currencyId = event.getCurrencyId();
+        var newTycoon = event.getNewTycoon(); // TycoonInfo
+        var oldTycoon = event.getOldTycoon(); // TycoonInfo (pode ser null)
+
+        String tag = event.getAPI().getTycoonTag(currencyId);
+        String name = newTycoon.getUsername() != null ? newTycoon.getUsername() : String.valueOf(newTycoon.getUuid());
+        System.out.println("Novo Tycoon de " + currencyId + ": " + name + " " + tag);
+    }
+}
+```
+
+Notas:
+- Caso seu mod ainda use “magnata”, atualize para os métodos Tycoon equivalentes.
+- Placeholders também foram atualizados (veja a lista mais abaixo).
 
 ## Funcionalidades Principais
 
@@ -67,7 +154,7 @@ if (economyAPI.currencyExists("money")) {
 #### Obter Configuração de uma Moeda
 
 ```java
-CurrencyConfig config = economyAPI.getCurrencyConfig("money");
+var config = economyAPI.getCurrencyConfig("money");
 if (config != null) {
     System.out.println("Nome: " + config.getName());
     System.out.println("Ranking habilitado: " + config.isRanking());
@@ -162,7 +249,7 @@ UUID fromUuid = sender.getUUID();
 UUID toUuid = receiver.getUUID();
 double amount = 100.0;
 
-PaymentResult result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
+var result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
 
 if (result.isSuccess()) {
     System.out.println("Pagamento realizado com sucesso!");
@@ -194,12 +281,13 @@ System.out.println("Taxa para transação de 1000: " + fee);
 ### 5. Histórico de Transações
 
 ```java
-List<Transaction> transactions = economyAPI.getPlayerTransactions(playerUuid, "money", 10);
+List<org.night.nighteconomy.database.MultiCurrencyDatabaseManager.Transaction> transactions =
+        economyAPI.getPlayerTransactions(playerUuid, "money", 10);
 
-for (Transaction transaction : transactions) {
+for (var transaction : transactions) {
     System.out.println("Tipo: " + transaction.getType());
     System.out.println("Quantia: " + transaction.getAmount());
-    System.out.println("Data: " + transaction.getTimestamp());
+    System.out.println("Data: " + transaction.getCreatedAt());
     System.out.println("Descrição: " + transaction.getDescription());
     System.out.println("---");
 }
@@ -231,9 +319,10 @@ if (economyAPI.isRankingEnabled("money")) {
 #### Obter Top Jogadores
 
 ```java
-List<RankingEntry> topPlayers = economyAPI.getTopPlayers("money", 10);
+List<org.night.nighteconomy.database.MultiCurrencyDatabaseManager.RankingEntry> topPlayers =
+        economyAPI.getTopPlayers("money", 10);
 
-for (RankingEntry entry : topPlayers) {
+for (var entry : topPlayers) {
     System.out.println(entry.getPosition() + ". " + entry.getUsername() + 
                       " - " + economyAPI.formatAmount("money", entry.getBalance()));
 }
@@ -250,16 +339,22 @@ if (position > 0) {
 }
 ```
 
-#### Sistema de Magnata
+#### Sistema de Tycoon
 
 ```java
-// Verificar se o jogador é o magnata (top 1)
-if (economyAPI.isPlayerMagnata(playerUuid, "money")) {
-    String magnataTag = economyAPI.getMagnataTag("money");
-    System.out.println("Jogador é o magnata! Tag: " + magnataTag);
+import org.night.nighteconomy.api.TycoonInfo;
+
+// Verificar se o jogador é o Tycoon (top 1)
+if (economyAPI.isPlayerTycoon(playerUuid, "money")) {
+    String tycoonTag = economyAPI.getTycoonTag("money");
+    System.out.println("Jogador é o Tycoon! Tag: " + tycoonTag);
 }
 
-// Forçar atualização do ranking
+// Ler Tycoon atual e último conhecido
+TycoonInfo current = economyAPI.getCurrentTycoon("money");
+TycoonInfo last = economyAPI.getLastKnownTycoon("money");
+
+// Forçar atualização do ranking (pode disparar mudança de Tycoon)
 economyAPI.forceRankingUpdate("money");
 ```
 
@@ -278,7 +373,7 @@ System.out.println("Saldo: " + value);
 ```java
 String message = "Seu saldo: %nighteconomy_money_balance% | Posição: %nighteconomy_money_position%";
 String processedMessage = economyAPI.processPlaceholders(playerUuid, message);
-player.sendMessage(Component.literal(processedMessage));
+player.sendMessage(net.minecraft.network.chat.Component.literal(processedMessage));
 ```
 
 #### Obter Todos os Placeholders
@@ -292,31 +387,30 @@ for (Map.Entry<String, String> entry : placeholders.entrySet()) {
 
 #### Placeholders Disponíveis
 
-```java
-String[] availablePlaceholders = economyAPI.getAvailablePlaceholders();
-for (String placeholder : availablePlaceholders) {
-    System.out.println("Placeholder disponível: " + placeholder);
-}
+```text
+%nighteconomy_<currency>_prefix%           - Nome da moeda
+%nighteconomy_<currency>_id%               - ID da moeda
+%nighteconomy_<currency>_balance%          - Saldo formatado do jogador
+%nighteconomy_<currency>_balance_raw%      - Saldo bruto do jogador
+%nighteconomy_<currency>_position%         - Posição no ranking
+%nighteconomy_<currency>_tycoon%           - Tag do Tycoon (se aplicável)
+%nighteconomy_<currency>_top1_name%        - Nome do jogador top 1
+%nighteconomy_<currency>_top1_balance%     - Saldo do jogador top 1
+%nighteconomy_<currency>_ranking_enabled%  - Se o ranking está habilitado
+%nighteconomy_<currency>_payment_enabled%  - Se o jogador aceita pagamentos
 ```
 
-**Lista de Placeholders:**
-
-- `%nighteconomy_<currency>_prefix%` - Nome da moeda
-- `%nighteconomy_<currency>_id%` - ID da moeda
-- `%nighteconomy_<currency>_balance%` - Saldo formatado do jogador
-- `%nighteconomy_<currency>_balance_raw%` - Saldo bruto do jogador
-- `%nighteconomy_<currency>_position%` - Posição no ranking
-- `%nighteconomy_<currency>_magnata%` - Tag de magnata (se aplicável)
-- `%nighteconomy_<currency>_top1_name%` - Nome do jogador top 1
-- `%nighteconomy_<currency>_top1_balance%` - Saldo do jogador top 1
-- `%nighteconomy_<currency>_ranking_enabled%` - Se o ranking está habilitado
-- `%nighteconomy_<currency>_payment_enabled%` - Se o jogador aceita pagamentos
+Observação:
+- O placeholder antigo de magnata foi substituído por tycoon. Se você ainda usa `%nighteconomy_<currency>_magnata%`, atualize para `%nighteconomy_<currency>_tycoon%`.
 
 ### 8. Sistema de Eventos
 
 #### Registrar um Listener
 
 ```java
+import org.night.nighteconomy.api.event.EconomyEventListener;
+import org.night.nighteconomy.api.TycoonInfo;
+
 public class MeuEconomyListener implements EconomyEventListener {
     
     @Override
@@ -334,12 +428,15 @@ public class MeuEconomyListener implements EconomyEventListener {
             System.out.println("Pagamento falhou: " + amount + " de " + fromUuid + " para " + toUuid);
         }
     }
-    
+
+    // Novo evento de Tycoon
     @Override
-    public void onMagnataChanged(UUID playerUuid, String currencyId, UUID previousMagnataUuid) {
-        System.out.println("Novo magnata da moeda " + currencyId + ": " + playerUuid);
-        if (previousMagnataUuid != null) {
-            System.out.println("Magnata anterior: " + previousMagnataUuid);
+    public void onTycoonChanged(String currencyId, TycoonInfo newTycoon, TycoonInfo previousTycoon) {
+        System.out.println("Novo Tycoon da moeda " + currencyId + ": " +
+                (newTycoon.getUsername() != null ? newTycoon.getUsername() : newTycoon.getUuid()));
+        if (previousTycoon != null) {
+            System.out.println("Tycoon anterior: " +
+                (previousTycoon.getUsername() != null ? previousTycoon.getUsername() : previousTycoon.getUuid()));
         }
     }
 }
@@ -351,6 +448,8 @@ economyAPI.registerEconomyListener(listener);
 // Remover o listener quando não precisar mais
 economyAPI.unregisterEconomyListener(listener);
 ```
+
+Dica: Se você ainda implementava onMagnataChanged, migre para onTycoonChanged.
 
 ### 9. Configurações e Mensagens
 
@@ -428,7 +527,7 @@ public class MinhaLoja {
         
         // Verificar se o jogador tem saldo suficiente
         if (!economyAPI.hasBalance(playerUuid, currencyId, preco)) {
-            player.sendMessage(Component.literal("§cVocê não tem dinheiro suficiente!"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§cVocê não tem dinheiro suficiente!"));
             return false;
         }
         
@@ -449,18 +548,25 @@ public class MinhaLoja {
             );
             
             String formatted = economyAPI.formatAmount(currencyId, preco);
-            player.sendMessage(Component.literal("§aVocê comprou " + item + " por " + formatted + "!"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aVocê comprou " + item + " por " + formatted + "!"));
             return true;
         }
         
         return false;
     }
+
+    private void darItem(Player player, String item) {
+        // implementação do seu mod
+    }
 }
 ```
 
-### Exemplo 2: Sistema de Recompensas
+### Exemplo 2: Sistema de Recompensas com Tycoon
 
 ```java
+import org.night.nighteconomy.api.EconomyEventListener;
+import org.night.nighteconomy.api.TycoonInfo;
+
 public class SistemaRecompensas implements EconomyEventListener {
     private NightEconomyAPI economyAPI;
     
@@ -473,20 +579,26 @@ public class SistemaRecompensas implements EconomyEventListener {
         boolean success = economyAPI.addBalance(playerUuid, currencyId, valor);
         if (success) {
             String formatted = economyAPI.formatAmount(currencyId, valor);
-            player.sendMessage(Component.literal("§aVocê recebeu " + formatted + " como recompensa!"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aVocê recebeu " + formatted + " como recompensa!"));
         }
     }
     
     @Override
-    public void onMagnataChanged(UUID playerUuid, String currencyId, UUID previousMagnataUuid) {
-        // Dar recompensa especial para o novo magnata
-        if ("money".equals(currencyId)) {
-            economyAPI.addBalance(playerUuid, currencyId, 10000.0);
-            
-            // Enviar mensagem para todos os jogadores
-            String magnataTag = economyAPI.getMagnataTag(currencyId);
-            // Broadcast: "Novo magnata coroado!"
+    public void onTycoonChanged(String currencyId, TycoonInfo newTycoon, TycoonInfo previousTycoon) {
+        // Dar recompensa especial para o novo Tycoon
+        if ("money".equals(currencyId) && newTycoon.getUuid() != null) {
+            economyAPI.addBalance(newTycoon.getUuid(), currencyId, 10000.0);
+
+            // Enviar mensagem para todos os jogadores (exemplo)
+            String tag = economyAPI.getTycoonTag(currencyId);
+            String name = newTycoon.getUsername() != null ? newTycoon.getUsername() : String.valueOf(newTycoon.getUuid());
+            String msg = (tag != null ? tag.replace('&','§') + " " : "") + "Novo Tycoon: " + name;
+            broadcast(msg);
         }
+    }
+
+    private void broadcast(String msg) {
+        // implementação de broadcast do seu mod
     }
 }
 ```
@@ -550,7 +662,7 @@ if (!success) {
 
 ```java
 try {
-    PaymentResult result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
+    var result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
     if (!result.isSuccess()) {
         // Tratar erro específico do pagamento
         handlePaymentError(result.getMessage());
@@ -563,24 +675,34 @@ try {
 
 ## Melhores Práticas
 
-1. **Sempre verificar se a API está disponível** antes de usar
-2. **Verificar se as moedas existem** antes de realizar operações
-3. **Usar `ensureAccountExists()`** antes de operações de saldo
-4. **Tratar erros adequadamente** e fornecer feedback ao usuário
-5. **Registrar listeners de eventos** para reagir a mudanças no sistema
-6. **Usar formatação adequada** para exibir valores ao usuário
-7. **Registrar transações externas** para manter histórico completo
-8. **Remover listeners** quando não precisar mais deles
+1. Sempre verificar se a API está disponível antes de usar
+2. Verificar se as moedas existem antes de realizar operações
+3. Usar `ensureAccountExists()` antes de operações de saldo
+4. Tratar erros adequadamente e fornecer feedback ao usuário
+5. Registrar listeners de eventos para reagir a mudanças no sistema
+6. Usar formatação adequada para exibir valores ao usuário
+7. Registrar transações externas para manter histórico completo
+8. Remover listeners quando não precisar mais deles
+9. Preferir as novas APIs de Tycoon (substituem o legado “magnata”)
 
 ## Suporte e Contribuições
 
 Para suporte, bugs ou sugestões:
 
-- **GitHub:** https://github.com/NightEconomy/NightEconomy
-- **Discord:** https://discord.gg/nighteconomy
-- **Wiki:** https://github.com/NightEconomy/NightEconomy/wiki
+- GitHub: https://github.com/nightsult/NightEconomy
+- Wiki: https://github.com/nightsult/NightEconomy/wiki
 
 ## Changelog da API
+
+### Versão 3.0.0
+- Renomeação de “magnata” para “tycoon”
+- Novas APIs:
+  - getCurrentTycoon(currencyId)
+  - getLastKnownTycoon(currencyId)
+  - getTycoonTag(currencyId)
+  - isPlayerTycoon(uuid, currencyId)
+- Placeholders atualizados: `%..._tycoon%` em vez de `%..._magnata%`
+- Evento `onTycoonChanged` (substitui `onMagnataChanged`)
 
 ### Versão 2.0.0
 - Sistema multi-moeda completo
@@ -593,4 +715,3 @@ Para suporte, bugs ou sugestões:
 - Versão inicial com economia básica
 - Comandos simples de dinheiro
 - Sistema de banco de dados SQLite
-
