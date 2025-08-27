@@ -199,7 +199,8 @@ public class Nighteconomy {
     }
 
     /**
-     * Implementação mínima e interna da NightEconomyAPI para expor somente leitura.
+     * Implementação mínima e interna da NightEconomyAPI para expor somente leitura
+     * + operações utilitárias necessárias pelo /buy (formatAmount e tryDebit).
      */
     private static final class DefaultNightEconomyAPI implements NightEconomyAPI {
         private final MultiCurrencyEconomyService economyService;
@@ -217,7 +218,6 @@ public class Nighteconomy {
 
         @Override
         public BigDecimal getBalance(UUID playerId, String currencyId) {
-            // Assume que o serviço trabalha em double; converte para BigDecimal
             double balance = economyService.getBalance(playerId, currencyId);
             return BigDecimal.valueOf(balance);
         }
@@ -263,6 +263,29 @@ public class Nighteconomy {
                         );
                     })
                     .collect(Collectors.toList());
+        }
+
+        // Novos métodos adicionados na interface NightEconomyAPI para suportar /buy:
+
+        @Override
+        public String formatAmount(String currencyId, BigDecimal amount) {
+            if (amount == null) return "0";
+            try {
+                return economyService.formatAmount(currencyId, amount.doubleValue());
+            } catch (Throwable t) {
+                return amount.toPlainString();
+            }
+        }
+
+        @Override
+        public boolean tryDebit(UUID playerId, String currencyId, BigDecimal amount, String reason) {
+            if (playerId == null || currencyId == null || amount == null) return false;
+            if (amount.signum() <= 0) return false;
+            try {
+                return economyService.subtractBalance(playerId, currencyId, amount.doubleValue());
+            } catch (Throwable t) {
+                return false;
+            }
         }
     }
 }
