@@ -4,8 +4,8 @@ import net.neoforged.bus.api.Event;
 import org.night.nighteconomy.api.NightEconomyAPI;
 
 /**
- * Evento disparado quando a API está pronta para uso.
- * Ouvintes podem chamar NightEconomyAPIProvider.get() com segurança após este evento.
+ * Event fired when the API is ready for use.
+ * Listeners can safely call NightEconomyAPIProvider.get() after this event.
  */
 public final class NightEconomyReadyEvent extends Event {
     private final NightEconomyAPI api;

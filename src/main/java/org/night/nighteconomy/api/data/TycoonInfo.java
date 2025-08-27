@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Informações sobre o Tycoon atual de uma moeda.
+ * Information about the current Tycoon of a coin.
  */
 public record TycoonInfo(
         UUID playerId,

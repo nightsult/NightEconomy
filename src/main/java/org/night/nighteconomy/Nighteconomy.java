@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
 @Mod(org.night.nighteconomy.Nighteconomy.MODID)
 public class Nighteconomy {
     public static final String MODID = "nighteconomy";
-    public static final String VERSION = "3.1.0";
+    public static final String VERSION = "3.3.0";
     private static final Logger LOGGER = LogManager.getLogger();
 
     private ConfigManager configManager;
@@ -46,7 +46,7 @@ public class Nighteconomy {
     private PlaceholderManager placeholderManager;
     private MultiCurrencyCommand commandManager;
 
-    private NightEconomyAPI api; // implementação interna mínima
+    private NightEconomyAPI api;
 
     private static Nighteconomy instance;
     private boolean apiPublished = false;
@@ -72,15 +72,12 @@ public class Nighteconomy {
             economyService = new MultiCurrencyEconomyService(databaseManager, configManager);
 
             placeholderManager = new PlaceholderManager(economyService, configManager);
-            // Mantido para compatibilidade (no-op atualmente)
             placeholderManager.registerPlaceholders();
 
             commandManager = new MultiCurrencyCommand(economyService, configManager);
 
-            // Implementação mínima da API (read-only), sem depender de NightEconomyAPIImpl
             this.api = new DefaultNightEconomyAPI(economyService, rankingManager);
 
-            // Publica no provider imediatamente (idempotente)
             NightEconomyAPIProvider.set(this.api);
             LOGGER.info("NightEconomy API set in provider.");
 
@@ -111,9 +108,8 @@ public class Nighteconomy {
                 LOGGER.info("Rankings successfully initialized!");
             }
 
-            // Dispara o evento de API pronta apenas uma vez
             if (!apiPublished && api != null) {
-                NightEconomyAPIProvider.set(api); // garante que está definido
+                NightEconomyAPIProvider.set(api);
                 NeoForge.EVENT_BUS.post(new NightEconomyReadyEvent(api));
                 apiPublished = true;
                 LOGGER.info("NightEconomyReadyEvent posted; API ready.");
@@ -194,10 +190,6 @@ public class Nighteconomy {
         }
     }
 
-    /**
-     * Implementação mínima e interna da NightEconomyAPI para expor somente leitura
-     * + operações utilitárias necessárias pelo /buy (formatAmount e tryDebit).
-     */
     private static final class DefaultNightEconomyAPI implements NightEconomyAPI {
         private final MultiCurrencyEconomyService economyService;
         private final RankingManager rankingManager;
@@ -260,8 +252,6 @@ public class Nighteconomy {
                     })
                     .collect(Collectors.toList());
         }
-
-        // Novos métodos adicionados na interface NightEconomyAPI para suportar /buy:
 
         @Override
         public String formatAmount(String currencyId, BigDecimal amount) {

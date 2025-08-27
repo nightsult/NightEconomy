@@ -9,53 +9,53 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * API pública somente-leitura do NightEconomy.
- * Fornece acesso a moedas, saldos, tycoon e ranking.
+ * NightEconomy's public read-only API.
+ * Provides access to currencies, balances, tycoon, and rankings.
  */
 public interface NightEconomyAPI {
 
     /**
-     * Identificadores das moedas disponíveis.
+     * Identifiers of available currencies.
      *
-     * @return conjunto de IDs de moeda (ex.: "coins", "gems")
+     * @return set of currency IDs (e.g., "coins", "gems")
      */
     Set<String> getAvailableCurrencies();
 
     /**
-     * Saldo atual do jogador em uma moeda específica.
+     * The player's current balance in a specific currency.
      *
-     * @param playerId   UUID do jogador
-     * @param currencyId ID da moeda
-     * @return saldo (nunca nulo). Se o jogador ainda não tem registro, retorna 0.
-     * @throws IllegalArgumentException se a moeda não existir
+     * @param playerId Player UUID
+     * @param currencyId Currency ID
+     * @return balance (never null). If the player is not yet registered, returns 0.
+     * @throws IllegalArgumentException if the currency does not exist
      */
     BigDecimal getBalance(UUID playerId, String currencyId);
 
     /**
-     * Informações do Tycoon atual de uma moeda (se houver).
+     * Current Tycoon information for a currency (if any).
      *
-     * @param currencyId ID da moeda
-     * @return TycoonInfo ou null se não houver tycoon
-     * @throws IllegalArgumentException se a moeda não existir
+     * @param currencyId Currency ID
+     * @return TycoonInfo or null if no tycoon exists
+     * @throws IllegalArgumentException if the currency does not exist
      */
     TycoonInfo getCurrentTycoon(String currencyId);
 
     /**
-     * Tag configurada do Tycoon para a moeda (por exemplo: {@code "&amp;a[$]"}).
+     * Configured Tycoon tag for the currency (for example: {@code "&amp;a[$]"}).
      *
-     * @param currencyId ID da moeda
-     * @return tag do tycoon (pode ser null ou vazio se não configurada)
-     * @throws IllegalArgumentException se a moeda não existir
+     * @param currencyId Currency ID
+     * @return tycoon tag (can be null or empty if not configured)
+     * @throws IllegalArgumentException if the currency does not exist
      */
     String getTycoonTag(String currencyId);
 
     /**
-     * Ranking da moeda, limitado a {@code limit} entradas.
+     * Currency ranking, limited to {@code limit} entries.
      *
-     * @param currencyId ID da moeda
-     * @param limit      máximo de entradas (ex.: 10 para top-10)
-     * @return lista ordenada por saldo desc, com posição iniciando em 1
-     * @throws IllegalArgumentException se a moeda não existir
+     * @param currencyId Currency ID
+     * @param limit Maximum number of entries (e.g., 10 for top-10)
+     * @return List sorted by balance desc, with position starting at 1
+     * @throws IllegalArgumentException if the currency does not exist
      */
     List<RankEntry> getTopRanking(String currencyId, int limit);
 

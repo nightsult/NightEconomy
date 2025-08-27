@@ -103,28 +103,23 @@ public class MultiCurrencyCommand {
                                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                                             .executes(context -> setMoney(context, currencyId)))))
 
-                    // /<cmd> top
                     .then(Commands.literal("top")
                             .requires(source -> hasPermission(source, topSub))
                             .executes(context -> showRanking(context, currencyId)))
 
-                    // /<cmd> reset <player>
                     .then(Commands.literal("reset")
                             .requires(source -> hasPermission(source, resetSub))
                             .then(Commands.argument("player", EntityArgument.player())
                                     .executes(context -> resetPlayer(context, currencyId))))
 
-                    // /<cmd> reload
                     .then(Commands.literal("reload")
                             .requires(source -> hasPermission(source, reloadSub))
                             .executes(context -> reloadCurrency(context, currencyId)))
 
-                    // /<cmd> toggle
                     .then(Commands.literal("toggle")
                             .requires(source -> hasPermission(source, toggleSub))
                             .executes(context -> togglePayments(context, currencyId)))
 
-                    // /<cmd> transactions [player]
                     .then(Commands.literal("transactions")
                             .requires(source -> hasPermission(source, txSub))
                             .executes(context -> showTransactions(context, currencyId))
@@ -149,7 +144,6 @@ public class MultiCurrencyCommand {
         );
     }
 
-    // Command implementations
     private int showBalance(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
         ServerPlayer player = context.getSource().getPlayerOrException();
         UUID playerUuid = player.getUUID();
@@ -281,9 +275,7 @@ public class MultiCurrencyCommand {
         return success ? 1 : 0;
     }
 
-    // ATUALIZADO: usar mensagens "ranking.*" corretas e não atualizar ranking no comando
     private int showRanking(CommandContext<CommandSourceStack> context, String currencyId) {
-        // Não força atualização aqui; apenas lê o cache (rápido)
         List<RankingEntry> ranking = economyService.getTopPlayers(currencyId, 10);
         CurrencyConfig config = configManager.getCurrency(currencyId);
 
@@ -310,7 +302,6 @@ public class MultiCurrencyCommand {
         return 1;
     }
 
-    // ATUALIZADO: consultas pesadas assíncronas (histórico do próprio)
     private int showTransactions(CommandContext<CommandSourceStack> context, String currencyId) throws CommandSyntaxException {
         CommandSourceStack source = context.getSource();
         ServerPlayer player = source.getPlayerOrException();
@@ -330,7 +321,7 @@ public class MultiCurrencyCommand {
                     String line = String.format("&e%s &7- &f%s &7(%s)",
                             transaction.getType(),
                             formattedAmount,
-                            String.valueOf(transaction.getCreatedAt())); // atualizado: getCreatedAt()
+                            String.valueOf(transaction.getCreatedAt()));
                     source.sendSuccess(() -> Component.literal(translateColors(line)), false);
                 }
             });
@@ -365,7 +356,7 @@ public class MultiCurrencyCommand {
                     String line = String.format("&e%s &7- &f%s &7(%s)",
                             transaction.getType(),
                             formattedAmount,
-                            String.valueOf(transaction.getCreatedAt())); // atualizado: getCreatedAt()
+                            String.valueOf(transaction.getCreatedAt()));
                     source.sendSuccess(() -> Component.literal(translateColors(line)), false);
                 }
             });
@@ -418,7 +409,6 @@ public class MultiCurrencyCommand {
 
             CurrencyConfig cfg = configManager.getCurrency(currencyId);
 
-            // Ordem: mensagem da moeda -> global -> default
             String message = getMessageFromConfig(cfg, messageKey, null);
             if (message == null || message.isBlank() || message.startsWith("Message not found")) {
                 message = configManager.getGlobalMessage(messageKey);
@@ -429,7 +419,6 @@ public class MultiCurrencyCommand {
                         : "&cYou disabled receiving payments.";
             }
 
-            // Torna efetivamente final para uso na lambda
             final String finalMessage = translateColors(message);
             context.getSource().sendSuccess(() -> Component.literal(finalMessage), false);
         } else {
@@ -490,7 +479,6 @@ public class MultiCurrencyCommand {
         return 1;
     }
 
-    // Utility methods (atualizados para usar PermissionUtil)
     private boolean hasPermission(CommandSourceStack source, CurrencyConfig.SubcommandConfig subcommand) {
         if (subcommand == null) return true;
         return PermissionUtil.has(source, subcommand.getPermission());
@@ -512,7 +500,6 @@ public class MultiCurrencyCommand {
             case "Saldo insuficiente":
                 return getMessageFromConfig(config, "insufficient-funds", "&cVocê não tem saldo suficiente!");
             case "Jogador não aceita pagamentos": {
-                // Primeiro tenta mensagem da moeda, depois global, por fim um default
                 String m = getMessageFromConfig(config, "payment-disabled", null);
                 if (m == null || m.isBlank() || m.startsWith("Message not found")) {
                     m = configManager.getGlobalMessage("payment-disabled");

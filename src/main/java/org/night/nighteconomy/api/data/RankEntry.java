@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Entrada de ranking para uma moeda específica.
+ * Rating input for a specific currency.
  */
 public record RankEntry(
         int position,

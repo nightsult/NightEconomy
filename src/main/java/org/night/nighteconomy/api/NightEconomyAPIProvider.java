@@ -3,9 +3,9 @@ package org.night.nighteconomy.api;
 import java.util.Objects;
 
 /**
- * Ponto de acesso estático à implementação da API.
- * O mod principal define {@link #set(NightEconomyAPI)} quando estiver pronto.
- * Mods terceiros usam {@link #get()} após receberem o NightEconomyReadyEvent.
+ * Static access point to the API implementation.
+ * The main mod sets {@link #set(NightEconomyAPI)} when ready.
+ * Third-party mods use {@link #get()} after receiving the NightEconomyReadyEvent.
  */
 public final class NightEconomyAPIProvider {
     private static volatile NightEconomyAPI INSTANCE;
@@ -13,23 +13,23 @@ public final class NightEconomyAPIProvider {
     private NightEconomyAPIProvider() {}
 
     /**
-     * Obtém a instância atual da API.
+     * Gets the current API instance.
      *
-     * @return instância da API
-     * @throws IllegalStateException se a API ainda não foi inicializada
+     * @return API instance
+     * @throws IllegalStateException if the API has not yet been initialized
      */
     public static NightEconomyAPI get() {
         NightEconomyAPI ref = INSTANCE;
         if (ref == null) {
-            throw new IllegalStateException("NightEconomyAPI ainda não está disponível.");
+            throw new IllegalStateException("NightEconomyAPI not yet available.");
         }
         return ref;
     }
 
     /**
-     * Define a implementação da API. Uso interno do mod.
+     * Defines the API implementation. Internal use of the mod.
      *
-     * @param api instância concreta
+     * @param api concrete instance
      */
     public static void set(NightEconomyAPI api) {
         INSTANCE = Objects.requireNonNull(api, "api");

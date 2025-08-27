@@ -23,39 +23,31 @@ public class MultiCurrencyEconomyService {
     private final ConfigManager configManager;
     private final ScheduledExecutorService scheduler;
     private final Map<String, Long> lastRankingUpdate = new ConcurrentHashMap<>();
-    // Executor single-thread dedicado para TODO acesso ao DB
     private final ExecutorService dbExecutor;
 
-    // Cache de saldo em memória (read/write-through)
     private final ConcurrentHashMap<UUID, ConcurrentHashMap<String, Double>> balanceCache = new ConcurrentHashMap<>();
 
-    // Cache de DecimalFormat por moeda/config (ThreadLocal porque DecimalFormat não é thread-safe)
-    // Chave: currencyId|centavos(2|0)|sepChar
     private final ConcurrentHashMap<String, ThreadLocal<DecimalFormat>> formatterCache = new ConcurrentHashMap<>();
 
-    // Retenção e manutenção (agendamento)
-    private volatile double txRetentionDays = 30.0; // reter 30 dias de histórico
-    private static final long PRUNE_INITIAL_DELAY_MIN = 5;     // primeira execução em 5 min
-    private static final long PRUNE_INTERVAL_MIN = 60;         // a cada 60 min
-    private static final long CHECKPOINT_INTERVAL_MIN = 30;    // a cada 30 min
-    private static final long MAINTENANCE_INTERVAL_HOURS = 24; // a cada 24 h (VACUUM + ANALYZE)
+    private volatile double txRetentionDays = 30.0;
+    private static final long PRUNE_INITIAL_DELAY_MIN = 5;
+    private static final long PRUNE_INTERVAL_MIN = 60;
+    private static final long CHECKPOINT_INTERVAL_MIN = 30;
+    private static final long MAINTENANCE_INTERVAL_HOURS = 24;
 
     public MultiCurrencyEconomyService(MultiCurrencyDatabaseManager databaseManager,
                                        ConfigManager configManager) {
         this.databaseManager = databaseManager;
         this.configManager = configManager;
 
-        // Single-threaded executor dedicado ao DB
         this.dbExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "NE-DB");
             t.setDaemon(true);
             return t;
         });
 
-        // Pool para agendamentos
         this.scheduler = Executors.newScheduledThreadPool(2);
 
-        // Inicia os schedulers
         startRankingUpdateScheduler();
         startMaintenanceSchedulers();
 
@@ -74,7 +66,6 @@ public class MultiCurrencyEconomyService {
     }
 
     private void startMaintenanceSchedulers() {
-        // Retenção de transações
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 dbExecutor.submit(() -> {
@@ -95,7 +86,6 @@ public class MultiCurrencyEconomyService {
         }, PRUNE_INITIAL_DELAY_MIN, PRUNE_INTERVAL_MIN, TimeUnit.MINUTES);
         LOGGER.debug("Transaction pruning scheduler started: initialDelay={}min, period={}min", PRUNE_INITIAL_DELAY_MIN, PRUNE_INTERVAL_MIN);
 
-        // WAL checkpoint (TRUNCATE)
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 dbExecutor.submit(() -> {
@@ -112,7 +102,6 @@ public class MultiCurrencyEconomyService {
         }, CHECKPOINT_INTERVAL_MIN, CHECKPOINT_INTERVAL_MIN, TimeUnit.MINUTES);
         LOGGER.debug("WAL checkpoint scheduler started: period={}min", CHECKPOINT_INTERVAL_MIN);
 
-        // VACUUM + ANALYZE diários
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 dbExecutor.submit(() -> {
@@ -131,7 +120,6 @@ public class MultiCurrencyEconomyService {
         LOGGER.debug("Maintenance scheduler started: period={}h", MAINTENANCE_INTERVAL_HOURS);
     }
 
-    // Atualiza rankings das moedas de acordo com o intervalo; a execução de DB é delegada ao dbExecutor
     private void updateAllRankings() {
         Map<String, CurrencyConfig> currencies = configManager.getCurrencies();
         long currentTime = System.currentTimeMillis();
@@ -149,15 +137,12 @@ public class MultiCurrencyEconomyService {
                 final String cid = currencyId;
                 dbExecutor.submit(() -> {
                     try {
-                        // Atualiza cache de ranking
                         databaseManager.updateRankingCache(cid);
 
-                        // Checa tycoon atual (top1) e compara com último salvo
                         RankingEntry top = databaseManager.getTopPlayerInfo(cid);
                         if (top != null && top.uuid != null) {
                             String prev = databaseManager.getLastTycoonUuid(cid);
 
-                            // Sempre persistimos o atual; broadcast somente se havia anterior e mudou
                             boolean changed = (prev == null) ? false : !prev.equals(top.uuid);
                             databaseManager.upsertLastTycoon(cid, top.uuid, top.username != null ? top.username : "");
 
@@ -200,7 +185,6 @@ public class MultiCurrencyEconomyService {
         }
     }
 
-    // --------------- API pública para manutenção/retention ---------------
     public void setTransactionRetentionDays(double days) {
         if (days < 0) days = 0;
         this.txRetentionDays = days;
@@ -241,7 +225,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    // --------------- Cache helpers (saldo) ---------------
     private ConcurrentHashMap<String, Double> userCache(UUID playerUuid) {
         return balanceCache.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>());
     }
@@ -268,7 +251,6 @@ public class MultiCurrencyEconomyService {
         balanceCache.clear();
     }
 
-    // --------------- Cache helpers (formatters) ---------------
     private static String formatterKey(String currencyId, boolean showCents, char decimalSep) {
         return currencyId + "|" + (showCents ? "2" : "0") + "|" + decimalSep;
     }
@@ -280,7 +262,7 @@ public class MultiCurrencyEconomyService {
                     DecimalFormatSymbols s = new DecimalFormatSymbols();
                     s.setDecimalSeparator(decimalSep);
                     DecimalFormat df = new DecimalFormat(showCents ? "0.00" : "0", s);
-                    df.setGroupingUsed(false); // sem separador de milhar
+                    df.setGroupingUsed(false);
                     return df;
                 })
         );
@@ -296,7 +278,6 @@ public class MultiCurrencyEconomyService {
         formatterCache.keySet().removeIf(k -> k.startsWith(prefix));
     }
 
-    // --------------- Accounts ---------------
     public boolean createAccount(UUID playerUuid, String currencyId, String username) {
         return createAccountAsync(playerUuid, currencyId, username).join();
     }
@@ -336,7 +317,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    // --------------- Transactions (history) ---------------
     public CompletableFuture<List<Transaction>> getPlayerTransactionsAsync(UUID playerUuid, String currencyId, int limit) {
         int lim = Math.min(limit, 50);
         return CompletableFuture.supplyAsync(
@@ -349,7 +329,6 @@ public class MultiCurrencyEconomyService {
         return getPlayerTransactionsAsync(playerUuid, currencyId, limit).join();
     }
 
-    // --------------- Balances (read-through/write-through) ---------------
     public double getBalance(UUID playerUuid, String currencyId) {
         return getBalanceAsync(playerUuid, currencyId).join();
     }
@@ -432,7 +411,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    // --------------- Payment toggle ---------------
     public boolean isPaymentEnabled(UUID playerUuid, String currencyId) {
         return isPaymentEnabledAsync(playerUuid, currencyId).join();
     }
@@ -455,7 +433,6 @@ public class MultiCurrencyEconomyService {
         );
     }
 
-    // --------------- Ranking ---------------
     public List<RankingEntry> getTopPlayers(String currencyId, int limit) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
         if (config == null || !config.isRanking()) {
@@ -495,7 +472,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    // Backward-compat method name
     public boolean isPlayerMagnata(UUID playerUuid, String currencyId) {
         return isPlayerTycoon(playerUuid, currencyId);
     }
@@ -527,7 +503,6 @@ public class MultiCurrencyEconomyService {
         return cfg != null && cfg.getTycoon() != null ? cfg.getTycoon() : "";
     }
 
-    // Backward-compat getter name
     public String getMagnataTag(String currencyId) {
         return getTycoonTag(currencyId);
     }
@@ -559,7 +534,6 @@ public class MultiCurrencyEconomyService {
         return df.format(amount);
     }
 
-    // --------------- Utilities ---------------
     public Map<String, Double> getAllPlayerBalances(UUID playerUuid) {
         return getAllPlayerBalancesAsync(playerUuid).join();
     }
@@ -584,7 +558,6 @@ public class MultiCurrencyEconomyService {
         return configManager.getCurrency(currencyId);
     }
 
-    // --------------- Shutdown ---------------
     public void shutdown() {
         scheduler.shutdown();
         try {
@@ -612,7 +585,6 @@ public class MultiCurrencyEconomyService {
         LOGGER.info("Economy service shutdown complete.");
     }
 
-    // --------------- Payment (atomic in DB) ---------------
     public PaymentResult payPlayer(UUID senderUuid, UUID receiverUuid, String currencyId, double amount) {
         return payPlayerAsync(senderUuid, receiverUuid, currencyId, amount).join();
     }
@@ -622,10 +594,10 @@ public class MultiCurrencyEconomyService {
                                                            String currencyId,
                                                            double amount) {
         return CompletableFuture.supplyAsync(() -> {
-            if (amount <= 0) return new PaymentResult(false, "Quantia inválida");
+            if (amount <= 0) return new PaymentResult(false, "Invalid amount");
 
             CurrencyConfig cfg = configManager.getCurrency(currencyId);
-            if (cfg == null) return new PaymentResult(false, "Moeda inexistente");
+            if (cfg == null) return new PaymentResult(false, "Non-existent currency");
 
             double fee = 0.0;
             if (cfg.getPayment() != null) {
@@ -637,17 +609,16 @@ public class MultiCurrencyEconomyService {
 
             switch (res.status) {
                 case RECEIVER_BLOCKED:
-                    return new PaymentResult(false, "Jogador não aceita pagamentos");
+                    return new PaymentResult(false, "Player does not accept payments");
                 case INSUFFICIENT_FUNDS:
-                    return new PaymentResult(false, "Saldo insuficiente");
+                    return new PaymentResult(false, "Insufficient balance");
                 case SENDER_NOT_FOUND:
                 case RECEIVER_NOT_FOUND:
-                    return new PaymentResult(false, "Conta inexistente");
+                    return new PaymentResult(false, "Non-existent account");
                 case ERROR:
-                    return new PaymentResult(false, "Erro ao processar pagamento");
+                    return new PaymentResult(false, "Error processing payment");
                 case OK:
                 default:
-                    // Atualiza cache de ambos após commit
                     double senderNew = databaseManager.getBalance(senderUuid, currencyId);
                     putCachedBalance(senderUuid, currencyId, senderNew);
 
@@ -659,7 +630,6 @@ public class MultiCurrencyEconomyService {
         }, dbExecutor);
     }
 
-    // Result classes
     public static class PaymentResult {
         private final boolean success;
         private final String message;

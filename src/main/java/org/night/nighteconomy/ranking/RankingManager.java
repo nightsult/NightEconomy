@@ -92,25 +92,21 @@ public class RankingManager {
         return topPlayers.isEmpty() ? null : topPlayers.get(0);
     }
 
-    // Novo: método com nome atualizado
     public boolean isPlayerTycoon(UUID playerUuid, String currencyId) {
         RankingEntry topPlayer = getTopPlayer(currencyId);
         return topPlayer != null && playerUuid.toString().equals(topPlayer.uuid);
     }
 
-    // Compatibilidade: manter método antigo chamando o novo
     @Deprecated
     public boolean isPlayerMagnata(UUID playerUuid, String currencyId) {
         return isPlayerTycoon(playerUuid, currencyId);
     }
 
-    // Novo: retorna a tag configurada do Tycoon
     public String getTycoonTag(String currencyId) {
         CurrencyConfig config = configManager.getCurrency(currencyId);
         return config != null ? (config.getTycoon() != null ? config.getTycoon() : "") : "";
     }
 
-    // Compatibilidade: manter método antigo chamando o novo
     @Deprecated
     public String getMagnataTag(String currencyId) {
         return getTycoonTag(currencyId);
@@ -161,10 +157,10 @@ public class RankingManager {
             rankingCache.put(currencyId, ranking);
             lastUpdateTime.put(currencyId, System.currentTimeMillis());
 
-            LOGGER.debug("Cache de ranking atualizado para moeda: " + currencyId + " (" + ranking.size() + " entradas)");
+            LOGGER.debug("Ranking cache updated for currency: " + currencyId + " (" + ranking.size() + " entrysies)");
 
         } catch (Exception e) {
-            LOGGER.error("Erro ao atualizar cache de ranking para moeda " + currencyId + ": ", e);
+            LOGGER.error("Error updating ranking cache for currency " + currencyId + ": ", e);
         }
     }
 
@@ -185,13 +181,13 @@ public class RankingManager {
     public void clearCache() {
         rankingCache.clear();
         lastUpdateTime.clear();
-        LOGGER.info("Cache de ranking limpo.");
+        LOGGER.info("Clear ranking cache.");
     }
 
     public void clearCache(String currencyId) {
         rankingCache.remove(currencyId);
         lastUpdateTime.remove(currencyId);
-        LOGGER.debug("Cache de ranking limpo para moeda: " + currencyId);
+        LOGGER.debug("Cleared ranking cache for currency: " + currencyId);
     }
 
     private static String formatterKey(String currencyId, boolean showCents, char decimalSep) {

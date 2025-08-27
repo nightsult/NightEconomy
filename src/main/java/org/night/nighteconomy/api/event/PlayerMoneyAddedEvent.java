@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Evento emitido quando dinheiro é adicionado ao jogador via comando "add".
+ * Event emitted when money is added to the player via the "add" command.
  */
 public final class PlayerMoneyAddedEvent extends Event {
     private final String currencyId;
@@ -16,11 +16,11 @@ public final class PlayerMoneyAddedEvent extends Event {
     private final String commandName;
 
     /**
-     * @param currencyId  ID da moeda
-     * @param playerId    jogador afetado
-     * @param amount      quantia adicionada (positiva)
-     * @param newBalance  novo saldo resultante
-     * @param commandName nome do comando que originou (ex.: "add")
+     * @param currencyId  Currency ID
+     * @param playerId    affected player
+     * @param amount      added (positive)
+     * @param newBalance  new resulting balance
+     * @param commandName name of the command that originated (e.g., "add")
      */
     public PlayerMoneyAddedEvent(String currencyId, UUID playerId, BigDecimal amount, BigDecimal newBalance, String commandName) {
         this.currencyId = currencyId;

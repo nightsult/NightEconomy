@@ -25,9 +25,8 @@ public class CurrencyConfig {
 
     private Map<String, String> messages;
 
-    // Tycoon (substitui "magnata")
-    private String tycoon;              // ex: "&a[$]"
-    private String tycoonBroadcast;     // ex: "\n&aPlayer &e%player% &ais the new server tycoon!\n"
+    private String tycoon;
+    private String tycoonBroadcast;
 
     public CurrencyConfig() {}
 
@@ -261,7 +260,6 @@ public class CurrencyConfig {
     public static CurrencyConfig createDefault(String id, String name) {
         CurrencyConfig c = new CurrencyConfig(id, name, 100.0);
 
-        // Tycoon defaults
         c.setTycoon("&a[$]");
         c.setTycoonBroadcast("\n&aPlayer &e%player% &ais the new server tycoon!\n");
 
@@ -335,7 +333,6 @@ public class CurrencyConfig {
         msgs.put("pay-received", "&aYou received &f{amount} &afrom &f{player}!");
         msgs.put("insufficient-funds", "&cYou do not have enough balance!");
         msgs.put("invalid-amount", "&cInvalid amount!");
-        // Novas mensagens para /<cmd> toggle
         msgs.put("payment-toggle-enabled", "&aYou enabled receiving payments.");
         msgs.put("payment-toggle-disabled", "&cYou disabled receiving payments.");
         c.setMessages(msgs);
@@ -356,7 +353,6 @@ public class CurrencyConfig {
         c.setRanking(cfg.getOrElse("ranking", true));
         c.setUpdate(cfg.getOrElse("update", 300));
 
-        // Tycoon (novo)
         c.setTycoon(cfg.getOrElse("tycoon", "&a[$]"));
         c.setTycoonBroadcast(cfg.getOrElse("tycoonBroadcast", "\n&aPlayer &e%player% &ais the new server tycoon!\n"));
 
@@ -513,7 +509,6 @@ public class CurrencyConfig {
                         if (received != null) msgs.put("pay-received", received);
                     }
                 }
-                // Qualquer outra estrutura aninhada vira chave com "-" (ex.: payment.toggle.enabled -> payment-toggle-enabled)
                 flattenMessages("", uc, msgs);
             } else if (messagesObj instanceof Map<?, ?> raw) {
                 for (Map.Entry<?, ?> e : raw.entrySet()) {
@@ -525,7 +520,6 @@ public class CurrencyConfig {
                 }
             }
         }
-        // Garantir defaults essenciais se faltarem
         msgs.putIfAbsent("payment-toggle-enabled", "&aYou enabled receiving payments.");
         msgs.putIfAbsent("payment-toggle-disabled", "&cYou disabled receiving payments.");
         c.setMessages(msgs);
@@ -557,7 +551,6 @@ public class CurrencyConfig {
             root.set("update", getUpdate());
             root.setComment("update", "Interval (seconds) to refresh the ranking cache when ranking=true.");
 
-            // Tycoon (novo)
             root.set("tycoon", getTycoon());
             root.setComment("tycoon", "'Tycoon' text/icon (top 1). Supports colors using &.");
 
@@ -722,7 +715,6 @@ public class CurrencyConfig {
                         getMessages().get("invalid-amount"),
                         "Error: Invalid amount.");
 
-                // Novas mensagens do toggle
                 putMessageWithComment(msg, "payment-toggle-enabled",
                         getMessages().get("payment-toggle-enabled"),
                         "When the player enables receiving payments (/<cmd> toggle).");

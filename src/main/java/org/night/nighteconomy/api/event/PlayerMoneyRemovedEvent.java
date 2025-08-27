@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Evento emitido quando dinheiro é removido do jogador via comando "remove".
+ * Event emitted when money is removed from the player via the "remove" command.
  */
 public final class PlayerMoneyRemovedEvent extends Event {
     private final String currencyId;
@@ -16,11 +16,11 @@ public final class PlayerMoneyRemovedEvent extends Event {
     private final String commandName;
 
     /**
-     * @param currencyId  ID da moeda
-     * @param playerId    jogador afetado
-     * @param amount      quantia removida (positiva)
-     * @param newBalance  novo saldo resultante
-     * @param commandName nome do comando que originou (ex.: "remove")
+     * @param currencyId  Currency ID
+     * @param playerId    Affected player
+     * @param amount      Amount removed (positive)
+     * @param newBalance  New resulting balance
+     * @param commandName Name of the command that originated (e.g., "remove")
      */
     public PlayerMoneyRemovedEvent(String currencyId, UUID playerId, BigDecimal amount, BigDecimal newBalance, String commandName) {
         this.currencyId = currencyId;

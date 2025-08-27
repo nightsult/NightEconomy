@@ -26,9 +26,7 @@ public class PlaceholderManager {
         this.configManager = configManager;
     }
 
-    // No-op; mantido para compatibilidade caso seja chamado em algum lugar
     public void registerPlaceholders() {
-        // Sem integração externa necessária.
     }
 
     public String processPlaceholder(UUID playerUuid, String placeholder) {
@@ -204,7 +202,6 @@ public class PlaceholderManager {
         };
     }
 
-    // Mantém compatibilidade com NightEconomyAPIImpl, sem dependência de LP
     public boolean isLuckPermsAvailable() {
         try {
             Class<?> provider = Class.forName("net.luckperms.api.LuckPermsProvider");
