@@ -2,7 +2,7 @@ package org.night.nighteconomy.api;
 
 /**
  * Static provider to expose the NightEconomyAPI instance to other mods.
- * Set the instance once the API is initialized.
+ * Call NightEconomyAPIProvider.set(api) once the API is initialized.
  */
 public final class NightEconomyAPIProvider {
     private static volatile NightEconomyAPI INSTANCE;

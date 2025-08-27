@@ -5,8 +5,44 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.107'
 }
 
-version = mod_version
-group = mod_group_id
+group = 'org.night'
+version = '3.1.0'
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+
+            artifactId = 'nighteconomy-api'
+
+            pom {
+                name = 'NightEconomy API'
+                description = 'Public API for NightEconomy mod'
+                url = 'https://github.com/nightsult/NightEconomy'
+                licenses {
+                    license {
+                        name = 'MIT'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/nightsult/NightEconomy'
+                    connection = 'scm:git:https://github.com/nightsult/NightEconomy.git'
+                    developerConnection = 'scm:git:https://github.com/nightsult/NightEconomy.git'
+                }
+                developers {
+                    developer {
+                        id = 'nightsult'
+                        name = 'Night'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
+}
 
 repositories {
     mavenLocal()
@@ -93,18 +129,6 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            url "file://${project.projectDir}/repo"
-        }
-    }
-}
 
 idea {
     module {
