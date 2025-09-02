@@ -1,717 +1,223 @@
-# NightEconomy API Documentation
+NightEconomy API (v3.3.0)
+A complete guide to the NightEconomy public API: how to import it, lifecycle, available methods, events, practical examples (/buy and Tycoon chat), and migration notes.
 
-## Visão Geral
+Last update: 2025-08-27
+Compatibility: NeoForge 1.21.1, Java 21
 
-A API do NightEconomy fornece acesso completo ao sistema de economia multi-moeda para outros mods. Esta documentação explica como integrar seu mod com o NightEconomy e utilizar todas as funcionalidades disponíveis.
+Importing the API into your mod
+repositories {
+    maven { url 'https://jitpack.io' }
+}
 
-## Versão da API
+dependencies {
+    implementation 'com.github.nightsult:NightEconomy:3.3.0' // or new version, check in project
+}
+Overview
+The public API is designed to be:
 
-**Versão Atual:** 3.0.0
+Safe for consumption by other mods.
+Clear separation between read-only access and exposed operations.
+Equipped with ranking/tycoon helpers and per-currency formatting.
+Ready-event driven to avoid race conditions on startup.
+Main entrypoint:
 
-## Obtendo a Instância da API
+package org.night.nighteconomy.api;
 
-### Método 1: Através do Registro de Serviços (Recomendado)
+public interface NightEconomyAPI {
+    Set<String> getAvailableCurrencies();
 
-```java
+    BigDecimal getBalance(UUID playerId, String currencyId);
+
+    TycoonInfo getCurrentTycoon(String currencyId);
+
+    String getTycoonTag(String currencyId);
+
+    List<RankEntry> getTopRanking(String currencyId, int limit);
+
+    boolean tryDebit(UUID playerId, String currencyId, BigDecimal amount, String reason);
+
+    String formatAmount(String currencyId, BigDecimal amount);
+}
+Data records:
+
+package org.night.nighteconomy.api.data;
+
+public record TycoonInfo(UUID playerId, String playerName, BigDecimal balance, String tag) { }
+
+public record RankEntry(int position, UUID playerId, String playerName, BigDecimal balance) { }
+Useful events:
+
+NightEconomyReadyEvent — fired when the API is ready.
+PlayerMoneyAddedEvent — fired when balance is added (if provided).
+PlayerMoneyRemovedEvent — fired when balance is removed (if provided).
+Notes:
+
+Keep mavenLocal() before mavenCentral() if using local publishing.
+Use Gradle’s “Reload All Gradle Projects” in the IDE after changes.
+Lifecycle: getting the API instance
+The safest is to listen for NightEconomyReadyEvent. As an alternative, you can fetch from the provider once you know the API is ready.
+
+Via event (recommended)
+import net.neoforged.bus.api.SubscribeEvent;
+import org.night.nighteconomy.api.NightEconomyAPI;
+import org.night.nighteconomy.api.event.NightEconomyReadyEvent;
+
+public final class MyModMain {
+    private NightEconomyAPI api;
+
+    public MyModMain() {
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(this);
+    }
+
+    @SubscribeEvent
+    public void onNightEconomyReady(NightEconomyReadyEvent e) {
+        this.api = e.getApi(); // API is guaranteed ready here
+    }
+}
+Via provider (when you are sure it’s ready)
 import org.night.nighteconomy.api.NightEconomyAPI;
 import org.night.nighteconomy.api.NightEconomyAPIProvider;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
-public class MeuMod {
-    private NightEconomyAPI economyAPI;
-    
-    @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event) {
-        // Obter a API através do registro de serviços
-        economyAPI = NightEconomyAPIProvider.get();
-        
-        if (economyAPI != null) {
-            System.out.println("NightEconomy API carregada com sucesso!");
-            System.out.println("Versão da API: " + economyAPI.getAPIVersion());
-        }
-    }
-}
-```
-
-### Método 2: Através de Eventos
-
-```java
-import org.night.nighteconomy.api.event.NightEconomyReadyEvent;
-import net.neoforged.bus.api.SubscribeEvent;
-
-public class MeuMod {
-    private NightEconomyAPI economyAPI;
-
-    @SubscribeEvent
-    public void onNightEconomyReady(NightEconomyReadyEvent event) {
-        economyAPI = event.getAPI();
-        // Sua lógica de inicialização aqui
-    }
-}
-```
-
-## Mini Tutorial: Tycoon (Magnata)
-
-A partir da API 3.0.0, o termo “magnata” foi substituído por “tycoon”. Há novas APIs para:
-- Obter o Tycoon atual (top 1 no ranking) de uma moeda.
-- Obter o último Tycoon conhecido (persistido na base) de uma moeda.
-- Obter a tag configurada do Tycoon (ex.: "&a[$]") para exibir em nomes/mensagens.
-
-### Passo a passo
-
-1) Obtenha a instância da API (veja “Obtendo a Instância da API”).
-
-2) Leia o Tycoon atual, o último Tycoon conhecido e a tag:
-
-```java
-import org.night.nighteconomy.api.TycoonInfo;
-
-String currencyId = "money";
-
-// Tycoon atual (lido do ranking_cache)
-TycoonInfo current = economyAPI.getCurrentTycoon(currencyId);
-
-// Último Tycoon conhecido (persistido em banco quando o ranking muda)
-TycoonInfo last = economyAPI.getLastKnownTycoon(currencyId);
-
-// Tag configurada (cores com &)
-String tycoonTag = economyAPI.getTycoonTag(currencyId);
-
-// Exemplos de uso:
-if (current != null) {
-    String name = current.getUsername() != null ? current.getUsername() : String.valueOf(current.getUuid());
-    System.out.println("Tycoon atual de " + currencyId + ": " + name);
-}
-if (last != null) {
-    String name = last.getUsername() != null ? last.getUsername() : String.valueOf(last.getUuid());
-    System.out.println("Último Tycoon conhecido: " + name);
-}
-System.out.println("Tag do Tycoon: " + tycoonTag);
-```
-
-3) Exiba a tag do Tycoon ao lado do nome do top 1 (exemplo simples para chat):
-
-```java
-// Utilitário rápido para traduzir & para §
-static String colorize(String s) { return s == null ? "" : s.replace('&', '§'); }
-
-TycoonInfo cur = economyAPI.getCurrentTycoon(currencyId);
-if (cur != null) {
-    String displayName = (cur.getUsername() != null ? cur.getUsername() : String.valueOf(cur.getUuid()));
-    String line = colorize(economyAPI.getTycoonTag(currencyId)) + " " + displayName;
-    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
-}
-```
-
-4) Reaja quando o Tycoon mudar (evento):
-
-```java
-import org.night.nighteconomy.api.event.TycoonChangedEvent;
-import net.neoforged.bus.api.SubscribeEvent;
-
-public class TycoonListener {
-    @SubscribeEvent
-    public void onTycoonChanged(TycoonChangedEvent event) {
-        String currencyId = event.getCurrencyId();
-        var newTycoon = event.getNewTycoon(); // TycoonInfo
-        var oldTycoon = event.getOldTycoon(); // TycoonInfo (pode ser null)
-
-        String tag = event.getAPI().getTycoonTag(currencyId);
-        String name = newTycoon.getUsername() != null ? newTycoon.getUsername() : String.valueOf(newTycoon.getUuid());
-        System.out.println("Novo Tycoon de " + currencyId + ": " + name + " " + tag);
-    }
-}
-```
-
-Notas:
-- Caso seu mod ainda use “magnata”, atualize para os métodos Tycoon equivalentes.
-- Placeholders também foram atualizados (veja a lista mais abaixo).
-
-## Funcionalidades Principais
-
-### 1. Gerenciamento de Moedas
-
-#### Listar Moedas Disponíveis
-
-```java
-Set<String> currencies = economyAPI.getAvailableCurrencies();
-for (String currencyId : currencies) {
-    String name = economyAPI.getCurrencyName(currencyId);
-    double defaultValue = economyAPI.getCurrencyDefaultValue(currencyId);
-    System.out.println("Moeda: " + currencyId + " (" + name + ") - Valor padrão: " + defaultValue);
-}
-```
-
-#### Verificar se uma Moeda Existe
-
-```java
-if (economyAPI.currencyExists("money")) {
-    System.out.println("A moeda 'money' está disponível!");
-}
-```
-
-#### Obter Configuração de uma Moeda
-
-```java
-var config = economyAPI.getCurrencyConfig("money");
-if (config != null) {
-    System.out.println("Nome: " + config.getName());
-    System.out.println("Ranking habilitado: " + config.isRanking());
-    System.out.println("Intervalo de atualização: " + config.getUpdate() + "s");
-}
-```
-
-### 2. Gerenciamento de Contas
-
-#### Criar uma Conta
-
-```java
-UUID playerUuid = player.getUUID();
-String username = player.getName().getString();
-
-boolean success = economyAPI.createAccount(playerUuid, "money", username);
-if (success) {
-    System.out.println("Conta criada com sucesso!");
-}
-```
-
-#### Verificar se uma Conta Existe
-
-```java
-if (economyAPI.hasAccount(playerUuid, "money")) {
-    System.out.println("O jogador já possui uma conta!");
-} else {
-    // Criar conta automaticamente
-    economyAPI.ensureAccountExists(playerUuid, "money", username);
-}
-```
-
-### 3. Operações de Saldo
-
-#### Obter Saldo
-
-```java
-double balance = economyAPI.getBalance(playerUuid, "money");
-String formattedBalance = economyAPI.formatAmount("money", balance);
-System.out.println("Saldo: " + formattedBalance);
-```
-
-#### Definir Saldo
-
-```java
-boolean success = economyAPI.setBalance(playerUuid, "money", 1000.0);
-if (success) {
-    System.out.println("Saldo definido com sucesso!");
-}
-```
-
-#### Adicionar Dinheiro
-
-```java
-boolean success = economyAPI.addBalance(playerUuid, "money", 500.0);
-if (success) {
-    System.out.println("Dinheiro adicionado com sucesso!");
-}
-```
-
-#### Remover Dinheiro
-
-```java
-if (economyAPI.hasBalance(playerUuid, "money", 100.0)) {
-    boolean success = economyAPI.subtractBalance(playerUuid, "money", 100.0);
-    if (success) {
-        System.out.println("Dinheiro removido com sucesso!");
-    }
-} else {
-    System.out.println("Saldo insuficiente!");
-}
-```
-
-#### Obter Todos os Saldos de um Jogador
-
-```java
-Map<String, Double> balances = economyAPI.getAllPlayerBalances(playerUuid);
-for (Map.Entry<String, Double> entry : balances.entrySet()) {
-    String currencyId = entry.getKey();
-    double balance = entry.getValue();
-    String formatted = economyAPI.formatAmount(currencyId, balance);
-    System.out.println(currencyId + ": " + formatted);
-}
-```
-
-### 4. Sistema de Pagamentos
-
-#### Realizar um Pagamento
-
-```java
-UUID fromUuid = sender.getUUID();
-UUID toUuid = receiver.getUUID();
-double amount = 100.0;
-
-var result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
-
-if (result.isSuccess()) {
-    System.out.println("Pagamento realizado com sucesso!");
-    if (result.getFee() > 0) {
-        System.out.println("Taxa cobrada: " + result.getFee());
-    }
-} else {
-    System.out.println("Erro no pagamento: " + result.getMessage());
-}
-```
-
-#### Configurações de Pagamento
-
-```java
-// Verificar se o jogador aceita pagamentos
-boolean acceptsPayments = economyAPI.isPaymentEnabled(playerUuid, "money");
-
-// Alterar configuração de pagamentos
-boolean success = economyAPI.setPaymentEnabled(playerUuid, "money", false);
-if (success) {
-    System.out.println("Pagamentos desabilitados para o jogador!");
-}
-
-// Calcular taxa de transação
-double fee = economyAPI.calculateTransactionFee("money", 1000.0);
-System.out.println("Taxa para transação de 1000: " + fee);
-```
-
-### 5. Histórico de Transações
-
-```java
-List<org.night.nighteconomy.database.MultiCurrencyDatabaseManager.Transaction> transactions =
-        economyAPI.getPlayerTransactions(playerUuid, "money", 10);
-
-for (var transaction : transactions) {
-    System.out.println("Tipo: " + transaction.getType());
-    System.out.println("Quantia: " + transaction.getAmount());
-    System.out.println("Data: " + transaction.getCreatedAt());
-    System.out.println("Descrição: " + transaction.getDescription());
-    System.out.println("---");
-}
-```
-
-#### Registrar Transação Externa
-
-```java
-boolean success = economyAPI.recordExternalTransaction(
-    "money",           // ID da moeda
-    null,              // UUID do remetente (null para sistema)
-    playerUuid,        // UUID do destinatário
-    500.0,             // Quantia
-    "QUEST_REWARD",    // Tipo da transação
-    "Recompensa de quest completada" // Descrição
-);
-```
-
-### 6. Sistema de Ranking
-
-#### Verificar se o Ranking está Habilitado
-
-```java
-if (economyAPI.isRankingEnabled("money")) {
-    System.out.println("Ranking está habilitado para a moeda 'money'!");
-}
-```
-
-#### Obter Top Jogadores
-
-```java
-List<org.night.nighteconomy.database.MultiCurrencyDatabaseManager.RankingEntry> topPlayers =
-        economyAPI.getTopPlayers("money", 10);
-
-for (var entry : topPlayers) {
-    System.out.println(entry.getPosition() + ". " + entry.getUsername() + 
-                      " - " + economyAPI.formatAmount("money", entry.getBalance()));
-}
-```
-
-#### Obter Posição de um Jogador
-
-```java
-int position = economyAPI.getPlayerPosition(playerUuid, "money");
-if (position > 0) {
-    System.out.println("Posição no ranking: " + position);
-} else {
-    System.out.println("Jogador não está no ranking.");
-}
-```
-
-#### Sistema de Tycoon
-
-```java
-import org.night.nighteconomy.api.TycoonInfo;
-
-// Verificar se o jogador é o Tycoon (top 1)
-if (economyAPI.isPlayerTycoon(playerUuid, "money")) {
-    String tycoonTag = economyAPI.getTycoonTag("money");
-    System.out.println("Jogador é o Tycoon! Tag: " + tycoonTag);
-}
-
-// Ler Tycoon atual e último conhecido
-TycoonInfo current = economyAPI.getCurrentTycoon("money");
-TycoonInfo last = economyAPI.getLastKnownTycoon("money");
-
-// Forçar atualização do ranking (pode disparar mudança de Tycoon)
-economyAPI.forceRankingUpdate("money");
-```
-
-### 7. Sistema de Placeholders
-
-#### Processar Placeholders Individuais
-
-```java
-String placeholder = "nighteconomy_money_balance";
-String value = economyAPI.processPlaceholder(playerUuid, placeholder);
-System.out.println("Saldo: " + value);
-```
-
-#### Processar Múltiplos Placeholders
-
-```java
-String message = "Seu saldo: %nighteconomy_money_balance% | Posição: %nighteconomy_money_position%";
-String processedMessage = economyAPI.processPlaceholders(playerUuid, message);
-player.sendMessage(net.minecraft.network.chat.Component.literal(processedMessage));
-```
-
-#### Obter Todos os Placeholders
-
-```java
-Map<String, String> placeholders = economyAPI.getAllPlaceholders(playerUuid);
-for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-    System.out.println(entry.getKey() + " = " + entry.getValue());
-}
-```
-
-#### Placeholders Disponíveis
-
-```text
-%nighteconomy_<currency>_prefix%           - Nome da moeda
-%nighteconomy_<currency>_id%               - ID da moeda
-%nighteconomy_<currency>_balance%          - Saldo formatado do jogador
-%nighteconomy_<currency>_balance_raw%      - Saldo bruto do jogador
-%nighteconomy_<currency>_position%         - Posição no ranking
-%nighteconomy_<currency>_tycoon%           - Tag do Tycoon (se aplicável)
-%nighteconomy_<currency>_top1_name%        - Nome do jogador top 1
-%nighteconomy_<currency>_top1_balance%     - Saldo do jogador top 1
-%nighteconomy_<currency>_ranking_enabled%  - Se o ranking está habilitado
-%nighteconomy_<currency>_payment_enabled%  - Se o jogador aceita pagamentos
-```
-
-Observação:
-- O placeholder antigo de magnata foi substituído por tycoon. Se você ainda usa `%nighteconomy_<currency>_magnata%`, atualize para `%nighteconomy_<currency>_tycoon%`.
-
-### 8. Sistema de Eventos
-
-#### Registrar um Listener
-
-```java
-import org.night.nighteconomy.api.event.EconomyEventListener;
-import org.night.nighteconomy.api.TycoonInfo;
-
-public class MeuEconomyListener implements EconomyEventListener {
-    
-    @Override
-    public void onBalanceChange(UUID playerUuid, String currencyId, double oldBalance, double newBalance, String reason) {
-        System.out.println("Saldo alterado para " + playerUuid + " na moeda " + currencyId);
-        System.out.println("Saldo anterior: " + oldBalance + " | Novo saldo: " + newBalance);
-        System.out.println("Motivo: " + reason);
-    }
-    
-    @Override
-    public void onPayment(UUID fromUuid, UUID toUuid, String currencyId, double amount, double fee, boolean success) {
-        if (success) {
-            System.out.println("Pagamento realizado: " + amount + " de " + fromUuid + " para " + toUuid);
-        } else {
-            System.out.println("Pagamento falhou: " + amount + " de " + fromUuid + " para " + toUuid);
-        }
-    }
-
-    // Novo evento de Tycoon
-    @Override
-    public void onTycoonChanged(String currencyId, TycoonInfo newTycoon, TycoonInfo previousTycoon) {
-        System.out.println("Novo Tycoon da moeda " + currencyId + ": " +
-                (newTycoon.getUsername() != null ? newTycoon.getUsername() : newTycoon.getUuid()));
-        if (previousTycoon != null) {
-            System.out.println("Tycoon anterior: " +
-                (previousTycoon.getUsername() != null ? previousTycoon.getUsername() : previousTycoon.getUuid()));
-        }
-    }
-}
-
-// Registrar o listener
-MeuEconomyListener listener = new MeuEconomyListener();
-economyAPI.registerEconomyListener(listener);
-
-// Remover o listener quando não precisar mais
-economyAPI.unregisterEconomyListener(listener);
-```
-
-Dica: Se você ainda implementava onMagnataChanged, migre para onTycoonChanged.
-
-### 9. Configurações e Mensagens
-
-#### Recarregar Configurações
-
-```java
-// Recarregar todas as configurações
-economyAPI.reloadConfigurations();
-
-// Recarregar apenas uma moeda específica
-economyAPI.reloadCurrency("money");
-```
-
-#### Obter Mensagens Configuradas
-
-```java
-// Mensagem específica de uma moeda
-String message = economyAPI.getMessage("money", "insufficient-funds");
-
-// Mensagem global
-String globalMessage = economyAPI.getGlobalMessage("no-permission");
-```
-
-### 10. Utilitários
-
-#### Formatação de Valores
-
-```java
-double amount = 1234567.89;
-
-// Formatação com abreviações (K, M, B, etc.)
-String formatted = economyAPI.formatAmount("money", amount);
-System.out.println("Formatado: " + formatted); // Ex: "1.23M"
-
-// Formatação sem abreviações
-String raw = economyAPI.formatAmountRaw("money", amount);
-System.out.println("Bruto: " + raw); // Ex: "1234567.89"
-```
-
-#### Estatísticas de Moeda
-
-```java
-Map<String, Object> stats = economyAPI.getCurrencyStatistics("money");
-
-System.out.println("Total de jogadores: " + stats.get("totalPlayers"));
-System.out.println("Saldo total: " + stats.get("totalBalance"));
-System.out.println("Saldo médio: " + stats.get("averageBalance"));
-System.out.println("Top jogador: " + stats.get("topPlayer"));
-```
-
-#### Verificar Integrações
-
-```java
-// Verificar se LuckPerms está disponível
-if (economyAPI.isLuckPermsAvailable()) {
-    System.out.println("LuckPerms está disponível para placeholders!");
-}
-
-// Obter versão da API
-String version = economyAPI.getAPIVersion();
-System.out.println("Versão da API: " + version);
-```
-
-## Exemplos Práticos
-
-### Exemplo 1: Sistema de Loja
-
-```java
-public class MinhaLoja {
-    private NightEconomyAPI economyAPI;
-    
-    public boolean comprarItem(Player player, String item, double preco) {
-        UUID playerUuid = player.getUUID();
-        String currencyId = "money";
-        
-        // Verificar se o jogador tem saldo suficiente
-        if (!economyAPI.hasBalance(playerUuid, currencyId, preco)) {
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§cVocê não tem dinheiro suficiente!"));
-            return false;
-        }
-        
-        // Remover o dinheiro
-        boolean success = economyAPI.subtractBalance(playerUuid, currencyId, preco);
-        if (success) {
-            // Dar o item ao jogador
-            darItem(player, item);
-            
-            // Registrar a transação
-            economyAPI.recordExternalTransaction(
-                currencyId,
-                playerUuid,
-                null,
-                preco,
-                "SHOP_PURCHASE",
-                "Compra na loja: " + item
-            );
-            
-            String formatted = economyAPI.formatAmount(currencyId, preco);
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aVocê comprou " + item + " por " + formatted + "!"));
-            return true;
-        }
-        
-        return false;
-    }
-
-    private void darItem(Player player, String item) {
-        // implementação do seu mod
-    }
-}
-```
-
-### Exemplo 2: Sistema de Recompensas com Tycoon
-
-```java
-import org.night.nighteconomy.api.EconomyEventListener;
-import org.night.nighteconomy.api.TycoonInfo;
-
-public class SistemaRecompensas implements EconomyEventListener {
-    private NightEconomyAPI economyAPI;
-    
-    public void darRecompensaQuest(Player player, double valor) {
-        UUID playerUuid = player.getUUID();
-        String currencyId = "money";
-        
-        economyAPI.ensureAccountExists(playerUuid, currencyId, player.getName().getString());
-        
-        boolean success = economyAPI.addBalance(playerUuid, currencyId, valor);
-        if (success) {
-            String formatted = economyAPI.formatAmount(currencyId, valor);
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aVocê recebeu " + formatted + " como recompensa!"));
-        }
-    }
-    
-    @Override
-    public void onTycoonChanged(String currencyId, TycoonInfo newTycoon, TycoonInfo previousTycoon) {
-        // Dar recompensa especial para o novo Tycoon
-        if ("money".equals(currencyId) && newTycoon.getUuid() != null) {
-            economyAPI.addBalance(newTycoon.getUuid(), currencyId, 10000.0);
-
-            // Enviar mensagem para todos os jogadores (exemplo)
-            String tag = economyAPI.getTycoonTag(currencyId);
-            String name = newTycoon.getUsername() != null ? newTycoon.getUsername() : String.valueOf(newTycoon.getUuid());
-            String msg = (tag != null ? tag.replace('&','§') + " " : "") + "Novo Tycoon: " + name;
-            broadcast(msg);
-        }
-    }
-
-    private void broadcast(String msg) {
-        // implementação de broadcast do seu mod
-    }
-}
-```
-
-### Exemplo 3: Integração com Placeholders
-
-```java
-public class MeuPlaceholderExpansion {
-    private NightEconomyAPI economyAPI;
-    
-    public String processCustomPlaceholder(Player player, String placeholder) {
-        UUID playerUuid = player.getUUID();
-        
-        // Usar placeholders do NightEconomy em seus próprios placeholders
-        if (placeholder.equals("meumod_saldo_total")) {
-            Map<String, Double> balances = economyAPI.getAllPlayerBalances(playerUuid);
-            double total = balances.values().stream().mapToDouble(Double::doubleValue).sum();
-            return String.format("%.2f", total);
-        }
-        
-        if (placeholder.equals("meumod_status_rico")) {
-            double balance = economyAPI.getBalance(playerUuid, "money");
-            return balance >= 1000000 ? "Rico" : "Pobre";
-        }
-        
-        return null;
-    }
-}
-```
-
-## Tratamento de Erros
-
-### Verificações Importantes
-
-```java
-// Sempre verificar se a API está disponível
-if (economyAPI == null) {
-    System.err.println("NightEconomy API não está disponível!");
-    return;
-}
-
-// Verificar se a moeda existe antes de usar
-if (!economyAPI.currencyExists("money")) {
-    System.err.println("Moeda 'money' não encontrada!");
-    return;
-}
-
-// Verificar se a conta existe antes de operações
-if (!economyAPI.hasAccount(playerUuid, "money")) {
-    economyAPI.ensureAccountExists(playerUuid, "money", username);
-}
-
-// Sempre verificar o resultado de operações críticas
-boolean success = economyAPI.setBalance(playerUuid, "money", 1000.0);
-if (!success) {
-    System.err.println("Falha ao definir saldo!");
-}
-```
-
-### Try-Catch para Operações Críticas
-
-```java
 try {
-    var result = economyAPI.payPlayer(fromUuid, toUuid, "money", amount);
-    if (!result.isSuccess()) {
-        // Tratar erro específico do pagamento
-        handlePaymentError(result.getMessage());
-    }
-} catch (Exception e) {
-    System.err.println("Erro inesperado durante pagamento: " + e.getMessage());
-    e.printStackTrace();
+    NightEconomyAPI api = NightEconomyAPIProvider.get();
+    // use api...
+} catch (IllegalStateException notReady) {
+    // API not ready yet
 }
-```
+API method reference
+getAvailableCurrencies()
+Returns the set of available currency IDs (e.g., "money", "gems").
+Use this to validate a currencyId before calling other methods.
+getBalance(playerId, currencyId)
+Returns the player’s balance as BigDecimal.
+Throws IllegalArgumentException if the currency does not exist.
+Example:
 
-## Melhores Práticas
+BigDecimal bal = api.getBalance(playerUuid, "money");
+String shown = api.formatAmount("money", bal); // e.g., "1,200.00" or with suffixes per config
+getCurrentTycoon(currencyId)
+Returns the top player info (TycoonInfo) for the currency or null if none.
+Accessors on the record:
+info.playerId()
+info.playerName()
+info.balance()
+info.tag() — configured tag, e.g. "&a[$]"
+Check if a player is the tycoon:
 
-1. Sempre verificar se a API está disponível antes de usar
-2. Verificar se as moedas existem antes de realizar operações
-3. Usar `ensureAccountExists()` antes de operações de saldo
-4. Tratar erros adequadamente e fornecer feedback ao usuário
-5. Registrar listeners de eventos para reagir a mudanças no sistema
-6. Usar formatação adequada para exibir valores ao usuário
-7. Registrar transações externas para manter histórico completo
-8. Remover listeners quando não precisar mais deles
-9. Preferir as novas APIs de Tycoon (substituem o legado “magnata”)
+TycoonInfo info = api.getCurrentTycoon("money");
+boolean isTycoon = info != null && playerUuid.equals(info.playerId());
+getTycoonTag(currencyId)
+Returns the configured Tycoon tag for the currency (may be empty).
+Useful once you know the player is the tycoon and you just need the tag.
+getTopRanking(currencyId, limit)
+Returns a list of RankEntry ordered by balance (desc), positions starting at 1.
+Ideal for “/top ”.
+Example:
 
-## Suporte e Contribuições
+List<RankEntry> top10 = api.getTopRanking("money", 10);
+for (RankEntry e : top10) {
+    System.out.println("#" + e.position() + " " + e.playerName() + " - " + api.formatAmount("money", e.balance()));
+}
+tryDebit(playerId, currencyId, amount, reason)
+Attempts to subtract a positive amount from the player’s balance.
+Returns true on success; false on insufficient funds or invalid currency.
+reason can be used for auditing/paper trails (implementation-dependent).
+Example (/buy):
 
-Para suporte, bugs ou sugestões:
+BigDecimal price = new BigDecimal("120.00");
+boolean ok = api.tryDebit(playerUuid, "money", price, "Shop: /buy diamond");
+formatAmount(currencyId, amount)
+Formats the amount according to currency configuration (decimal separator, cents, multiples).
+Always use this for UI strings and chat messages.
+Example: /buy command
+final String currencyId = "money";
+final BigDecimal price = BigDecimal.valueOf(120);
 
-- GitHub: https://github.com/nightsult/NightEconomy
-- Wiki: https://github.com/nightsult/NightEconomy/wiki
+if (!api.getAvailableCurrencies().contains(currencyId)) {
+    fail("Currency 'money' is not available.");
+    return 0;
+}
 
-## Changelog da API
+BigDecimal bal = api.getBalance(playerUuid, currencyId);
+if (bal.compareTo(price) < 0) {
+    fail("Not enough: need " + api.formatAmount(currencyId, price));
+    return 0;
+}
 
-### Versão 3.0.0
-- Renomeação de “magnata” para “tycoon”
-- Novas APIs:
-  - getCurrentTycoon(currencyId)
-  - getLastKnownTycoon(currencyId)
-  - getTycoonTag(currencyId)
-  - isPlayerTycoon(uuid, currencyId)
-- Placeholders atualizados: `%..._tycoon%` em vez de `%..._magnata%`
-- Evento `onTycoonChanged` (substitui `onMagnataChanged`)
+if (!api.tryDebit(playerUuid, currencyId, price, "Shop: /buy diamond")) {
+    fail("Could not debit, try again.");
+    return 0;
+}
 
-### Versão 2.0.0
-- Sistema multi-moeda completo
-- Integração com LuckPerms
-- Sistema de placeholders avançado
-- Sistema de eventos
-- API completa para desenvolvedores
+// give item...
+success("Bought for " + api.formatAmount(currencyId, price));
+Example: Tycoon chat formatting (NeoForge 1.21.1)
+Config file at config/nightshop/nightchat.toml:
 
-### Versão 1.0.0
-- Versão inicial com economia básica
-- Comandos simples de dinheiro
-- Sistema de banco de dados SQLite
+format = "&e[L] {tycoon_money}&e [{nighteconomy_money}] &7%player%:&r {message}"
+Supported tokens:
+
+{tycoon_}: shows the Tycoon tag only if the sender is the tycoon for that currency.
+{nighteconomy_}: the sender’s balance (formatted).
+%player%: sender’s name.
+{message}: chat message text.
+Event handler essence:
+
+@SubscribeEvent
+public void onServerChat(ServerChatEvent event) {
+    NightEconomyAPI api = Nightshop.getEconomyAPI();
+    if (api == null) return;
+
+    ServerPlayer p = event.getPlayer();
+    UUID u = p.getUUID();
+    String raw = event.getRawText();
+
+    String s = formatFromFile; // read from nightchat.toml
+    s = replaceTycoonTokens(s, api, u);       // uses api.getCurrentTycoon(...)
+    s = replaceBalanceTokens(s, api, u);      // uses api.getBalance + api.formatAmount
+    s = s.replace("%player%", p.getName().getString())
+         .replace("{message}", raw);
+    s = colorize(s); // replace & with §
+
+    // NeoForge 1.21.1 setter:
+    event.setMessage(Component.literal(s));
+}
+Events
+Subscribe with @SubscribeEvent on the NeoForge event bus.
+
+NightEconomyReadyEvent
+
+Fired when the API is ready for use.
+Provides: getApi()
+PlayerMoneyAddedEvent / PlayerMoneyRemovedEvent (when present)
+
+Provide data like currencyId, playerId, amount, newBalance, commandName.
+Example:
+
+@SubscribeEvent
+public void onNEReady(NightEconomyReadyEvent e) {
+    this.api = e.getApi();
+}
+Best practices and performance
+Validate currencyId using getAvailableCurrencies() before invoking other methods.
+Handle IllegalArgumentException for nonexistent currencies.
+Do not spam calls in tick loops; ranking and formatting are cached internally, but still prefer batching and reuse.
+Always use formatAmount for user-facing text.
+Migration (old API → new API)
+“Magnata” has been renamed to “Tycoon”.
+Old names may still exist internally for compatibility, but external consumers should use Tycoon names.
+TycoonInfo is a Java record; use accessors playerId(), playerName(), balance(), tag().
+To check tycoon ownership, compare player UUID with TycoonInfo.playerId().
+New additions for common mod needs:
+tryDebit(playerId, currencyId, BigDecimal, reason) for shops.
+formatAmount(currencyId, BigDecimal) for consistent formatting.
+Troubleshooting
+“Cannot import org.night.nighteconomy.api in my mod”
+
+Ensure you ran publishToMavenLocal on NightEconomy.
+Keep mavenLocal() before mavenCentral().
+Check dependency tree: ./gradlew -q dependencies --configuration compileClasspath.
+Refresh Gradle in your IDE; try --refresh-dependencies.
+“Chat event setter not found in NeoForge 1.21.1”
+
+Use event.setMessage(Component.literal(text)) (not setComponent).
